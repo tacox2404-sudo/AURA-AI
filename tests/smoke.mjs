@@ -44,6 +44,8 @@ async function signUp(page, name) {
 
 try {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
+  // The in-game guide (Pip) pops up for new accounts. Turn it off so it never covers what the robot taps.
+  await ctx.addInitScript(() => { try { localStorage.setItem('op:guide:off', '1'); } catch (e) {} });
   const a = await ctx.newPage(); watch(a, 'A');
   await a.goto(URL); await a.waitForTimeout(600);
 

@@ -20,20 +20,27 @@ const mk = (id) => { const seen = []; const c = createSupabaseBackend(url, key).
 const look = (P) => (P.seen.at(-1) || []).map((p) => `${p.name}@${p.x},${p.z}/${p.roomId}`).sort().join(' ');
 const move = (P, name, x, z, roomId = 'r1') => P.c.updatePresence({ roomId, x, z, name, avatar: { skin: 1 } });
 let failed = 0;
-const expect = (label, got, want) => { const ok = got === want; if (!ok) failed++; console.log(ok ? '✅' : '❌', label, ok ? '' : `got "${got}", wanted "${want}"`); };
+// Wait until the situation matches (up to 10 s) and report how long the network took.
+async function expectSoon(label, read, want, max = 10000) {
+  const t0 = Date.now(); let got = read();
+  while (got !== want && Date.now() - t0 < max) { await wait(100); got = read(); }
+  const ok = got === want; if (!ok) failed++;
+  console.log(ok ? '✅' : '❌', label, ok ? `(${((Date.now() - t0) / 1000).toFixed(1)}s)` : `got "${got}", wanted "${want}"`);
+}
 
 const A = mk('A'); await wait(1500); move(A, 'Alice', 1, 1); await wait(500);
-const B = mk('B'); await wait(1500); move(B, 'Bob', 5, 5); await wait(1500);
-expect('both see each other after joining', `${look(A)} | ${look(B)}`, 'Bob@5,5/r1 | Alice@1,1/r1');
-for (let i = 1; i <= 8; i++) { move(B, 'Bob', 5 + i, 5); await wait(130); } await wait(800);
-expect('A sees Bob walk', look(A), 'Bob@13,5/r1');
-for (let i = 1; i <= 8; i++) { move(A, 'Alice', 1 + i, 1); await wait(130); } await wait(800);
-expect('B sees Alice walk', look(B), 'Alice@9,1/r1');
-move(A, 'Alice', 0, 0, 'r2'); await wait(1000);
-expect('B sees Alice change room', look(B), 'Alice@0,0/r2');
-const C = mk('C'); await wait(1200); move(C, 'Cara', 3, 3); await wait(4500);
-expect('late joiner sees where Bob stands', look(C).includes('Bob@13,5/r1'), true);
-A.c.leave(); await wait(1500);
-expect('B stops seeing Alice after she leaves', look(B).includes('Alice'), false);
+const B = mk('B'); await wait(1500); move(B, 'Bob', 5, 5);
+await expectSoon('A sees Bob join', () => look(A), 'Bob@5,5/r1');
+await expectSoon('B sees Alice', () => look(B), 'Alice@1,1/r1');
+for (let i = 1; i <= 8; i++) { move(B, 'Bob', 5 + i, 5); await wait(130); }
+await expectSoon('A sees Bob walk', () => look(A), 'Bob@13,5/r1');
+for (let i = 1; i <= 8; i++) { move(A, 'Alice', 1 + i, 1); await wait(130); }
+await expectSoon('B sees Alice walk', () => look(B), 'Alice@9,1/r1');
+move(A, 'Alice', 0, 0, 'r2');
+await expectSoon('B sees Alice change room', () => look(B), 'Alice@0,0/r2');
+const C = mk('C'); await wait(1200); move(C, 'Cara', 3, 3);
+await expectSoon('late joiner sees where Bob stands', () => look(C).includes('Bob@13,5/r1'), true);
+A.c.leave();
+await expectSoon('B stops seeing Alice after she leaves', () => look(B).includes('Alice'), false, 15000);
 console.log(failed ? `\n❌ ${failed} live check(s) failed` : '\n✅ Live connection works: players see each other and each other\'s movement.');
 process.exit(failed ? 1 : 0);
