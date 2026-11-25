@@ -5,6 +5,7 @@
 import { loginScreen, housePicker, onboarding, friendly } from './screens.js';
 import { loadingLine, knockLine } from './fun.js';
 import { initFriends } from './friends.js';
+import { initTour } from './tour.js';
 import { initChat } from './chat.js';
 import { initPoints } from './points.js';
 
@@ -29,6 +30,7 @@ export function initSocial(ctx) {
   initChat(ctx);
   initPoints(ctx);
   const friends = initFriends(ctx, { enterHouse: (house, role) => enterHouse(house, role) });
+  initTour(ctx); // Pip, the in-game guide
 
   // ---------- flow: login -> pick house -> enter ----------
   async function start() {
@@ -230,6 +232,7 @@ export function initSocial(ctx) {
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); showPicker(); } }, '🏘️ Switch or create house'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); openPeople(); } }, '👥 Invite people'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('social.openFriends')(); } }, '🤝 Friends'),
+      h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('social.openGuide')(); } }, '❓ Guide (Pip)'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('world.openWardrobe')(false); } }, '👕 Wardrobe'),
       s.role !== 'owner' ? h('button', { class: 'row-main', onclick: () => { ui.closePanel(); quitHouse(); } }, '👋 Leave this house') : null,
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); signOut(); } }, '🚪 Log out'),

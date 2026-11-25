@@ -34,7 +34,9 @@ has its own saved state. Win records are under the key `records`.
 
 ## Store (`ctx.store`)
 
-`{ me, house, role, roomId, mode: 'play' | 'build', players: Presence[] }`
+`{ me, house, role, roomId, mode: 'play' | 'build' | 'help', players: Presence[] }`
+
+`mode: 'help'` is set by Social while Pip's "What is this object?" is waiting for a tap: World then sends `world:tap` but does not walk or open the object.
 
 ## Events (`ctx.bus`)
 
@@ -71,6 +73,7 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 | `social.openPeople()`, `social.openMenu()`, `social.switchHouse()`, `social.signOut()` | Social | panels |
 | `points.open()`, `points.standings()` | Social | scores |
 | `activities.open(id, { item, room, key })`, `activities.list()` | Activities | open any activity |
+| `social.openGuide()` | Social | Pip's guide menu (replay tour, explain room/object, cheat sheet) |
 
 ## Backend API (`ctx.backend`, same in demo and Supabase)
 
