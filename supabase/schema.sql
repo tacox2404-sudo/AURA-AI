@@ -210,3 +210,79 @@ begin
 end; $$;
 
 grant execute on function set_member_role(uuid, uuid, text), remove_member(uuid, uuid), leave_house(uuid) to authenticated;
+
+-- ---------- friends ----------
+-- A friendship is one row: requester asked, addressee answers. 'pending' until accepted.
+-- People change it only through the functions below (so nobody can fake a friendship).
+create table if not exists friends (
+  requester uuid not null references auth.users on delete cascade,
+  addressee uuid not null references auth.users on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz default now(),
+  primary key (requester, addressee),
+  check (requester <> addressee)
+);
+create index if not exists friends_addressee_idx on friends (addressee);
+alter table friends enable row level security;
+drop policy if exists "friends read own" on friends;
+create policy "friends read own" on friends for select using (requester = auth.uid() or addressee = auth.uid());
+grant select on friends to authenticated;
+
+-- Ask someone to be friends by username. If they already asked you, you become friends.
+-- Returns 'sent' or 'accepted'.
+create or replace function send_friend_request(p_username text)
+returns text language plpgsql security definer set search_path = public as $$
+declare other uuid;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select id into other from profiles where lower(username) = lower(trim(p_username));
+  if other is null then raise exception 'No player with that username'; end if;
+  if other = auth.uid() then raise exception 'That is you!'; end if;
+  if exists (select 1 from friends where status = 'accepted' and ((requester = auth.uid() and addressee = other) or (requester = other and addressee = auth.uid()))) then
+    raise exception 'You are already friends';
+  end if;
+  if exists (select 1 from friends where requester = auth.uid() and addressee = other) then
+    raise exception 'Request already sent';
+  end if;
+  if exists (select 1 from friends where requester = other and addressee = auth.uid()) then
+    update friends set status = 'accepted' where requester = other and addressee = auth.uid();
+    return 'accepted';
+  end if;
+  insert into friends (requester, addressee) values (auth.uid(), other);
+  return 'sent';
+end; $$;
+
+-- Answer a request someone sent you: accept, or decline (which deletes it).
+create or replace function respond_friend_request(p_user uuid, p_accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if not exists (select 1 from friends where requester = p_user and addressee = auth.uid() and status = 'pending') then
+    raise exception 'No request from that person';
+  end if;
+  if p_accept then update friends set status = 'accepted' where requester = p_user and addressee = auth.uid();
+  else delete from friends where requester = p_user and addressee = auth.uid();
+  end if;
+end; $$;
+
+-- Remove a friend, or cancel a request you sent.
+create or replace function remove_friend(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  delete from friends where (requester = auth.uid() and addressee = p_user) or (requester = p_user and addressee = auth.uid());
+end; $$;
+
+-- My friends and requests, with the other person's name and avatar.
+-- status: 'friend', 'incoming' (they asked me) or 'outgoing' (I asked them).
+create or replace function list_friends()
+returns table (user_id uuid, username text, avatar jsonb, status text)
+language sql security definer stable set search_path = public as $$
+  select o.id, o.username, o.avatar,
+    case when f.status = 'accepted' then 'friend' when f.requester = auth.uid() then 'outgoing' else 'incoming' end
+  from friends f
+  join profiles o on o.id = case when f.requester = auth.uid() then f.addressee else f.requester end
+  where f.requester = auth.uid() or f.addressee = auth.uid();
+$$;
+
+grant execute on function send_friend_request(text), respond_friend_request(uuid, boolean), remove_friend(uuid), list_friends() to authenticated;
