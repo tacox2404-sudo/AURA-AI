@@ -3,7 +3,7 @@
 // and the services other areas use to draw furniture and make houses.
 
 import { CATALOG, CATALOG_BY_ID, CATEGORIES } from './catalog.js';
-import { VIBES, HOUSE_TYPES, makeHouseDraft, makeRoom } from './templates.js';
+import { VIBES, HOUSE_TYPES, makeHouseDraft, makeRoom, arrangeRoom } from './templates.js';
 import { createAiRoom } from './aiRoom.js';
 import { canEdit, currentRoom, uid } from '../core/store.js';
 
@@ -139,6 +139,7 @@ export function initBuild(ctx) {
     const list = h('div', { class: 'list' }, ...s.house.rooms.map((r) => h('div', { class: 'row' },
       h('button', { class: 'row-main' + (r.id === s.roomId ? ' active' : ''), onclick: () => { ui.closePanel(); bus.emit('room:goto', { roomId: r.id }); } },
         h('span', { class: 'swatch', style: { background: r.theme.accent } }), r.name, h('small', {}, `${r.items.length} items`)),
+      editor ? h('button', { class: 'icon-btn', title: 'Arrange the furniture nicely', onclick: () => arrangeNicely(r) }, '✨') : null,
       editor ? h('button', { class: 'icon-btn', title: 'Rename', onclick: () => renameRoom(r) }, '✎') : null,
       editor && s.house.rooms.length > 1 ? h('button', { class: 'icon-btn', title: 'Delete', onclick: () => deleteRoom(r) }, '🗑') : null)));
 
@@ -170,6 +171,15 @@ export function initBuild(ctx) {
     const house = structuredClone(store.get().house);
     house.rooms.find((x) => x.id === r.id).name = name.slice(0, 30);
     save(house).then(openRooms);
+  }
+  // Re-arrange the furniture of an existing room like a real room (sofa facing the TV, chairs around tables...).
+  // Every piece stays, only positions and turns change.
+  async function arrangeNicely(r) {
+    if (!(await ui.confirm(`Arrange "${r.name}" nicely?`, 'Your furniture stays, but every piece moves to a better spot (sofas face the TV, chairs go round tables). You can still move things in Build mode.', 'Arrange'))) return;
+    const house = structuredClone(store.get().house);
+    const room = house.rooms.find((x) => x.id === r.id);
+    room.items = arrangeRoom(room);
+    save(house).then(() => { ui.toast('✨ Room arranged!'); openRooms(); });
   }
   async function deleteRoom(r) {
     if (!(await ui.confirm(`Delete "${r.name}"?`, 'Everything in this room will be removed.', 'Delete'))) return;

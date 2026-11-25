@@ -1,6 +1,6 @@
-# AURA (code name OurPlace): rules for Claude (read this first, every session)
+# OurPlace (the repo is called AURA AI): rules for Claude (read this first, every session)
 
-AURA is a cozy low-poly 3D browser game where people build a shared house with
+OurPlace is a cozy low-poly 3D browser game where people build a shared house with
 their partner, friends or family, then hang out, play and keep memories together,
 live or at different times. Read `docs/PLAN.md` for the scope, and the
 `docs/CONTRACTS.md` file before changing how areas talk to each other.

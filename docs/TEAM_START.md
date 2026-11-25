@@ -1,4 +1,4 @@
-# Welcome to AURA: start here (20 minutes)
+# Welcome to OurPlace: start here (20 minutes)
 
 ## 1. Play it first (5 min, phone or laptop)
 

@@ -13,7 +13,7 @@ export function friendly(message = '') {
   return message;
 }
 
-// The landing page + login. Looks like a small website: what AURA is, what you can do,
+// The landing page + login. Looks like a small website: what OurPlace is, what you can do,
 // how it works, the ways to join, and the login form. Styles are injected below because
 // this folder can't edit src/styles.css.
 const FEATURES = [
@@ -106,7 +106,7 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     h('div', { class: 'al-top' },
       h('div', { class: 'al-hero' },
         h('div', { class: 'al-logo' }, '🏠'),
-        h('h1', {}, 'AURA'),
+        h('h1', {}, 'OurPlace'),
         tag,
         h('p', { class: 'al-lead' }, 'A cozy low-poly world where you build a shared house with your partner, friends or family, then hang out, play games and keep memories together. Live, or at different times.'),
         h('div', { class: 'al-cta' },
@@ -119,7 +119,7 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     h('div', { class: 'al-grid s' }, ...STEPS.map(step)),
     h('h2', {}, 'Ways to join'),
     h('div', { class: 'al-grid w' }, ...WAYS.map(card)),
-    h('p', { class: 'al-foot' }, 'Free, friendly and non-commercial. Made with 💛 by the AURA team.')));
+    h('p', { class: 'al-foot' }, 'Free, friendly and non-commercial. Made with 💛 by the OurPlace team.')));
 }
 
 export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, onFriends, joinCode = '' }) {

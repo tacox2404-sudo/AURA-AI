@@ -99,7 +99,7 @@ export function roomSteps(room, house, defOf) {
 export function welcomeSteps(me) {
   return [
     { say: `Hi ${me?.username || 'there'}! I'm Pip, your tour guide. I'm legally required to be adorable.`, mood: 'happy' },
-    { say: 'AURA is a cozy little world you build with your people. Live, or at different times. No rush, no rules.', mood: 'wow' },
+    { say: 'OurPlace is a cozy little world you build with your people. Live, or at different times. No rush, no rules.', mood: 'wow' },
     { say: 'Tap the floor to walk. Pinch to zoom. Tap things to use them. That is the whole control scheme.', mood: 'wink' },
   ];
 }
