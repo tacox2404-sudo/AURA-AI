@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest).
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, and a member can leave.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -129,6 +129,27 @@ try {
   await c.waitForTimeout(500);
   const roleC = await c.evaluate(() => window.__ourplace.store.get().role);
   if (roleC !== 'guest') throw new Error(`Guest link gave role "${roleC}"`);
+
+  log('owner promotes the guest (People panel)');
+  const cId = await c.evaluate(() => window.__ourplace.store.get().me.id);
+  await a.evaluate(() => window.__ourplace.use('social.openPeople')());
+  await a.waitForTimeout(300);
+  await a.locator('.row', { hasText: 'tester_c' }).locator('button[title="Make housemate"]').click();
+  await a.locator('button', { hasText: /^Yes$/ }).click();
+  await a.waitForTimeout(800);
+  const promoted = await a.evaluate((id) => window.__ourplace.store.get().house.members[id]?.role, cId);
+  if (promoted !== 'housemate') throw new Error(`Promote left the role as "${promoted}"`);
+  await a.keyboard.press('Escape');
+
+  log('a member leaves the house');
+  await c.waitForTimeout(800); // C reloads after the promotion
+  await c.evaluate(() => window.__ourplace.use('social.openMenu')());
+  await c.waitForTimeout(300);
+  await c.click('text=Leave this house');
+  await c.locator('button', { hasText: /^Leave$/ }).click();
+  await a.waitForTimeout(1500);
+  const stillThere = await a.evaluate((id) => !!window.__ourplace.store.get().house.members[id], cId);
+  if (stillThere) throw new Error('Player C left but the owner still sees them as a member');
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
