@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, and a member can leave.
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, and a friend request can be sent and accepted.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -150,6 +150,22 @@ try {
   await a.waitForTimeout(1500);
   const stillThere = await a.evaluate((id) => !!window.__ourplace.store.get().house.members[id], cId);
   if (stillThere) throw new Error('Player C left but the owner still sees them as a member');
+
+  log('friends: send a request and accept it');
+  await a.evaluate(() => window.__ourplace.use('social.openFriends')());
+  await a.waitForTimeout(300);
+  await a.fill('input[placeholder="Friend\'s username"]', 'tester_c');
+  await a.click('text=Send request');
+  await a.waitForTimeout(600);
+  if (!(await a.locator('text=Waiting for an answer').count())) throw new Error('Sent request is not shown as waiting');
+  await a.keyboard.press('Escape');
+  // C left the house earlier, so C is on the house list, where Friends opens as a full page
+  await c.click('text=🤝 Friends');
+  await c.waitForTimeout(600);
+  await c.locator('button[title="Accept"]').click();
+  await c.waitForTimeout(600);
+  const friendsOfA = await a.evaluate(async () => (await window.__ourplace.backend.listFriends()).map((f) => `${f.username}:${f.status}`));
+  if (!friendsOfA.includes('tester_c:friend')) throw new Error(`A's friends are ${JSON.stringify(friendsOfA)}, expected tester_c:friend`);
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
