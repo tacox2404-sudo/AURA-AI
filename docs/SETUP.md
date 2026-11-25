@@ -6,7 +6,7 @@ different phones. The lead does steps 2-5; everyone else just does step 1.
 ## 1. Everyone: get the code running
 
 1. Install [Node.js](https://nodejs.org) (the LTS version) and Git.
-2. Fork the repo on GitHub (teammates) or use it directly (lead), then in a terminal:
+2. Clone the team repo directly (everyone, lead included; the lead invites teammates as collaborators first). In a terminal:
    ```bash
    git clone https://github.com/tacox2404-sudo/AURA-AI.git
    cd AURA-AI

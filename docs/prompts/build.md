@@ -1,6 +1,6 @@
 # Home Builder & AI Architect (Building): kickoff prompt
 
-Paste everything below the line into a new Claude Code chat, opened inside your clone of your fork.
+Paste everything below the line into a new Claude Code chat, opened inside your clone of the team repo.
 
 ---
 
@@ -9,7 +9,7 @@ You are my coding partner on **AURA** (code name OurPlace), a cozy low-poly 3D b
 **My role: Home Builder & AI Architect.** I make building and decorating fun, and I make the AI turn a sentence into a beautiful room that always fits the game's style.
 
 ## First, get to know the project (do all of this before writing any code)
-1. Check we're in my fork of https://github.com/tacox2404-sudo/AURA-AI. Run `git remote -v`. If there's no `upstream` remote, add it: `git remote add upstream https://github.com/tacox2404-sudo/AURA-AI.git`.
+1. Check we're in my clone of https://github.com/tacox2404-sudo/AURA-AI (not a fork). Run `git remote -v`: `origin` must be that repo. If I haven't cloned yet, clone it for me.
 2. Read the repo: CLAUDE.md (team rules), README.md, docs/PLAN.md (scope), docs/CONTRACTS.md (how the areas talk), docs/LOG.md (what happened so far), scripts/areas.json (which files I may change).
 3. Read EVERY file in my folder: src/build/. Skim src/main.js and src/core/ so you understand how my area plugs in, but don't change them.
 4. Run `npm install`, `npm run build`, then `npm run dev`, and give me the link so I can play. Explain how to test my area in the game (what to tap).
@@ -31,11 +31,11 @@ I own **Building**: the furniture catalog, build mode, rooms, house templates, t
 - [ ] Day 5: bug fixing; nothing can be placed outside a room.
 
 ## How every session works
-1. Sync: `git checkout main && git pull upstream main && git push origin main`.
+1. Sync: `git checkout main && git pull`.
 2. Branch: `git checkout -b build/<short-task>` (the `build/` prefix is required).
 3. Build the rough version first, make it work end to end, then polish. It must work on a phone screen AND in demo mode (no Supabase).
 4. After each change, tell me exactly what to tap to test it.
 5. Before pushing, run `npm run build`, `npm run smoke` and `npm run scope`. Fix anything red.
-6. Add 2-4 lines to docs/LOG.md, commit, `git push -u origin <branch>`, then open a pull request to the team repo: `gh pr create --repo tacox2404-sudo/AURA-AI --base main` with the template filled in. Give me the PR link and a one-line message for the team chat.
+6. Add 2-4 lines to docs/LOG.md, commit, `git push -u origin <branch>`, then open a pull request: `gh pr create --base main` with the template filled in. Give me the PR link and a one-line message for the team chat.
 
-When I start a new chat later, I'll say "continue Building". You'll re-read CLAUDE.md and docs/LOG.md, sync with upstream, and suggest the next goal.
+When I start a new chat later, I'll say "continue Building". You'll re-read CLAUDE.md and docs/LOG.md, pull main, and suggest the next goal.

@@ -32,12 +32,11 @@ Your Day 1 task is on the [Issues board](https://github.com/tacox2404-sudo/AURA-
 ## 3. Set up your copy (10 min)
 
 1. Install [Node.js](https://nodejs.org) (LTS), [Git](https://git-scm.com), the [GitHub CLI](https://cli.github.com) (then run `gh auth login`) and Claude Code.
-2. Go to https://github.com/tacox2404-sudo/AURA-AI and click **Fork** (top right) → Create fork.
-3. In a terminal (replace YOUR-USERNAME):
+2. Accept the collaborator invitation the Game Director sent you (email or github.com notifications).
+3. In a terminal:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/AURA-AI.git
+   git clone https://github.com/tacox2404-sudo/AURA-AI.git
    cd AURA-AI
-   git remote add upstream https://github.com/tacox2404-sudo/AURA-AI.git
    npm install
    claude
    ```
@@ -47,7 +46,7 @@ Your Day 1 task is on the [Issues board](https://github.com/tacox2404-sudo/AURA-
 
 ## 4. How we keep the game from breaking
 
-- **You work in your fork**, on a branch named after your area (`world/…`, `build/…`, `social/…`, `activities/…`). Only the Game Director merges into the team repo.
+- **You work in your own clone**, on a branch named after your area (`world/…`, `build/…`, `social/…`, `activities/…`). You push it to the team repo so everyone can read it; only the Game Director merges into `main`.
 - **Claude can only edit your area's folder.** A guard blocks anything else. If you need something from another area, Claude writes an Issue for them instead.
 - **Every pull request is checked automatically:** it must build, only touch your area, and pass a robot playtest of the whole game. Red check = fix it before it gets merged.
 - **Merge small, every day.** Ideas for later go on the board with the `idea` label.

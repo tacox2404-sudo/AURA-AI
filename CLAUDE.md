@@ -38,21 +38,26 @@ perfect-and-unfinished. We go broad first, then deep.
 7. **Before finishing:** run `npm run build` and fix every error. Then add 2-4 lines to
    `docs/LOG.md` (date, area, what changed, what's next).
 
-## Git workflow: forks (do it for the user, explain each step briefly)
+## Git workflow: everyone clones the team repo (do it for the user, explain each step briefly)
 
-Each teammate works in their OWN FORK of `tacox2404-sudo/AURA-AI` (the "upstream").
-Only the lead merges into upstream `main`, so nobody can break the live game by accident.
+Everyone (lead included) clones `tacox2404-sudo/AURA-AI` directly and pushes short-lived
+branches to it, so every team can read the others' work. Only the lead merges into `main`
+(enforced by a branch ruleset on GitHub), so nobody can break the live game by accident.
 
-- First time: the user forks on GitHub, then `git clone <their fork URL>` and
-  `git remote add upstream https://github.com/tacox2404-sudo/AURA-AI.git`.
-- Start every session: `git checkout main && git pull upstream main && git push origin main`,
-  then `git checkout -b <area>/<short-task>` (example: `world/walk-animation`).
+- First time: `git clone https://github.com/tacox2404-sudo/AURA-AI.git` (the lead invites
+  teammates as collaborators first).
+- Start every session: `git checkout main && git pull`, then
+  `git checkout -b <area>/<short-task>` (example: `world/walk-animation`).
   The area prefix is required: world/, build/, social/, activities/ (lead: core/).
-- Commit small steps with clear messages.
-- Before pushing: `npm run build`, `npm run smoke`, `npm run scope`. All must pass.
-- Finish: `git push -u origin <branch>`, then open a pull request to upstream:
-  `gh pr create --repo tacox2404-sudo/AURA-AI --base main --title "..." --body "..."`
+- Keep branches short (merged within a day or two). No long-lived team branches: they drift apart.
+- Commit small steps with clear messages. Push often with `git push -u origin <branch>`.
+- To read another team's work: merged work arrives with `git pull` on main; work in
+  progress with `git fetch` then `git checkout <their-branch>` (look, don't edit).
+- Before the pull request: `npm run build`, `npm run smoke`, `npm run scope`. All must pass.
+- Finish: open a pull request into `main`:
+  `gh pr create --base main --title "..." --body "..."`
   (or the "Compare & pull request" button on GitHub). Fill in the PR template.
+- Update your branch if main moved: `git pull origin main`.
 
 ## Safety nets (don't fight them)
 
