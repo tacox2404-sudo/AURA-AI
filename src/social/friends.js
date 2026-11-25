@@ -73,7 +73,7 @@ export function initFriends(ctx, { enterHouse } = {}) {
     async function inviteFriend(f) {
       const house = store.get().house;
       const link = `${location.origin}${location.pathname}?join=${house.guestCode}`;
-      const text = `Hey ${f.username}! Come visit "${house.name}" on AURA 🏠\nOpen: ${link}\nor enter code ${house.guestCode}`;
+      const text = `Hey ${f.username}! Come visit "${house.name}" on OurPlace 🏠\nOpen: ${link}\nor enter code ${house.guestCode}`;
       try { await navigator.clipboard.writeText(text); ui.toast(`Invite for ${f.username} copied. Paste it in your chat!`); }
       catch { ui.ask({ title: `Invite ${f.username}`, text, ok: 'Done' }); }
     }
