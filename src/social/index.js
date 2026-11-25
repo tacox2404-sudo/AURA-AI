@@ -2,14 +2,14 @@
 // Accounts, houses (create / join / switch), invites and roles, the live connection,
 // people online, chat and points.
 
-import { loginScreen, housePicker, onboarding } from './screens.js';
+import { loginScreen, housePicker, onboarding, friendly } from './screens.js';
 import { initChat } from './chat.js';
 import { initPoints } from './points.js';
 
 export function initSocial(ctx) {
   const { ui, store, backend, bus } = ctx; const { h } = ui;
   let conn = null;
-  const joinParam = new URLSearchParams(location.search).get('join') || '';
+  let joinParam = new URLSearchParams(location.search).get('join') || ''; // invite code from the link; cleared once used
 
   // ---------- services ----------
   ctx.provide('live.presence', (p) => conn?.updatePresence(p));
@@ -31,15 +31,19 @@ export function initSocial(ctx) {
   async function start() {
     ui.setDockVisible(false);
     const me = await backend.getSession();
-    if (!me) return loginScreen(ctx, { onDone: (u) => afterLogin(u) });
+    if (!me) return loginScreen(ctx, { onDone: (u) => afterLogin(u), invited: !!joinParam });
     afterLogin(me);
   }
 
   async function afterLogin(me) {
     store.set({ me });
     if (joinParam) {
-      try { const { house, role } = await backend.joinWithCode(joinParam, me); history.replaceState(null, '', location.pathname); return enterHouse(house, role); }
-      catch (e) { ui.toast(e.message); }
+      try {
+        const { house, role } = await backend.joinWithCode(joinParam, me);
+        joinParam = ''; history.replaceState(null, '', location.pathname);
+        ui.toast(`You joined ${house.name} as ${role} 🎉`);
+        return enterHouse(house, role);
+      } catch (e) { ui.toast(friendly(e.message)); }
     }
     const houses = await backend.listMyHouses(me.id);
     const lastId = safeGet('op:lastHouse');
@@ -57,7 +61,7 @@ export function initSocial(ctx) {
       me, houses, joinCode: joinParam,
       onOpen: openHouse,
       onCreate: () => onboarding(ctx, { me, onCancel: showPicker, onDone: createHouse }),
-      onJoin: async (code) => { const { house, role } = await backend.joinWithCode(code, me); enterHouse(house, role); },
+      onJoin: async (code) => { const { house, role } = await backend.joinWithCode(code, me); joinParam = ''; enterHouse(house, role); },
       onLogout: signOut,
     });
   }

@@ -1,18 +1,31 @@
 // LOGIN, HOUSE PICKER and ONBOARDING screens (owned by Social).
 
-export function loginScreen(ctx, { onDone }) {
+// Turns technical errors (from Supabase or the browser) into short, friendly sentences.
+export function friendly(message = '') {
+  const m = String(message).toLowerCase();
+  if (m.includes('invalid login')) return 'Wrong username or password.';
+  if (m.includes('already registered') || m.includes('already been registered') || m.includes('duplicate key') || m.includes('username is taken')) return 'That username is taken. Pick another one, or log in if it is yours.';
+  if (m.includes('at least 6')) return 'Password needs at least 6 characters.';
+  if (m.includes('rate limit') || m.includes('too many')) return 'Too many tries. Wait a minute and try again.';
+  if (m.includes('failed to fetch') || m.includes('network')) return 'No connection. Check your internet and try again.';
+  if (m.includes('no house found')) return 'No house found with that code. Check it with the person who invited you (codes are 6 letters or numbers).';
+  return message;
+}
+
+export function loginScreen(ctx, { onDone, invited = false }) {
   const { ui, backend } = ctx; const { h } = ui;
   const user = h('input', { placeholder: 'Username', autocomplete: 'username', maxlength: 20 });
   const pass = h('input', { placeholder: 'Password', type: 'password', autocomplete: 'current-password' });
   const err = h('p', { class: 'error' });
   const go = (fn) => async () => {
     err.textContent = '';
-    try { onDone(await fn(user.value, pass.value)); } catch (e) { err.textContent = e.message; }
+    try { onDone(await fn(user.value, pass.value)); } catch (e) { err.textContent = friendly(e.message); }
   };
   ui.screen(h('div', { class: 'screen center' },
     h('div', { class: 'logo' }, '🏠'),
     h('h1', {}, 'OurPlace'),
     h('p', { class: 'tagline' }, 'A cozy home you build with your people, wherever they are.'),
+    invited ? h('p', { class: 'card', style: { textAlign: 'center' } }, '💌 You have been invited to a house! Create an account (or log in) and you will join it automatically.') : null,
     h('div', { class: 'card form' }, user, pass, err,
       h('div', { class: 'row-btns' },
         h('button', { class: 'primary', onclick: go((u, p) => backend.signIn(u, p)) }, 'Log in'),
@@ -32,7 +45,7 @@ export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogou
       : h('p', { class: 'muted' }, "You don't have a house yet. Create one, or join a friend's with their code."),
     h('div', { class: 'card' }, h('button', { class: 'primary wide', onclick: onCreate }, '＋ Create a new house')),
     h('div', { class: 'card form' }, h('h4', {}, 'Join a house'), code, err,
-      h('button', { class: 'wide', onclick: async () => { err.textContent = ''; try { await onJoin(code.value); } catch (e) { err.textContent = e.message; } } }, 'Join'))));
+      h('button', { class: 'wide', onclick: async () => { err.textContent = ''; try { await onJoin(code.value); } catch (e) { err.textContent = friendly(e.message); } } }, 'Join'))));
 }
 
 export function onboarding(ctx, { me, onDone, onCancel }) {

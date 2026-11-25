@@ -154,3 +154,8 @@ grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
+
+-- ---------- keep-alive ----------
+-- A harmless function the weekly keep-alive workflow calls so the free project never pauses.
+create or replace function ping() returns int language sql stable as $$ select 1 $$;
+grant execute on function ping() to anon, authenticated;
