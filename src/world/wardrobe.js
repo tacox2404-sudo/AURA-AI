@@ -40,5 +40,5 @@ export function initWardrobe(ctx) {
   }
 
   ctx.provide('world.openWardrobe', open);
-  ui.addDockButton({ id: 'wardrobe', icon: '👕', label: 'Wardrobe', onClick: () => open(false), order: 30 });
+  ui.addDockButton({ id: 'wardrobe', icon: '👕', label: 'Wardrobe', onClick: () => open(false), order: 30, group: 'more' });
 }

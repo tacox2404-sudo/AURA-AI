@@ -97,5 +97,5 @@ export function initPoints(ctx) {
 
   ctx.provide('points.standings', standings);
   ctx.provide('points.open', open);
-  ui.addDockButton({ id: 'scores', icon: '🏆', label: 'Scores', onClick: open, order: 60 });
+  ui.addDockButton({ id: 'scores', icon: '🏆', label: 'Scores', onClick: open, order: 60, group: 'more' });
 }

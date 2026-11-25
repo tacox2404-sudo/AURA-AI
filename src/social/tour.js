@@ -84,13 +84,13 @@ export function initTour(ctx) {
       row('🔎 What is this object? (tap it)', startExplainMode),
       row('📜 Cheat sheet: what can I do here?', openCheatSheet),
       row(off ? '🔔 Turn automatic tours back on' : '🙈 Stop automatic tours', () => { safeSet(keyOf('off'), off ? '0' : '1'); ui.toast(off ? 'Pip will offer tours again 🎉' : 'Okay, Pip will only come when called 🙈'); }),
-      h('p', { class: 'muted small' }, 'Pip is always one tap away on the ❓ button.')) });
+      h('p', { class: 'muted small' }, 'Pip lives under ⋯ More (right edge) → ❓ Guide.')) });
   }
   function openCheatSheet() {
     ui.panel({ title: '📜 What can I do here?', body: h('div', { class: 'list' },
       ...CHEAT_SHEET.map(([name, text]) => h('div', { class: 'row' }, h('b', {}, name), h('small', { style: { display: 'block' } }, text)))) });
   }
   ctx.provide('social.openGuide', openGuide);
-  ui.addDockButton({ id: 'guide', icon: '❓', label: 'Guide', onClick: openGuide, order: 5 }); // first in the dock so it is never scrolled out of sight on a phone
+  ui.addDockButton({ id: 'guide', icon: '❓', label: 'Guide', onClick: openGuide, order: 80, group: 'more' });
   return { openGuide, playHouseTour };
 }

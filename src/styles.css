@@ -50,6 +50,23 @@ h1, h2, h3, h4 { margin: .2em 0 .5em; }
 .dock-icon { font-size: 1.35rem; line-height: 1.2; }
 .dock-label { font-size: .7rem; color: var(--ink-2); }
 
+/* ---------- "More" ribbon (right edge): the less frequent buttons live here ---------- */
+.ribbon { position: absolute; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 240px); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+.ribbon > * { pointer-events: auto; }
+.ribbon.hidden, .ribbon.empty { display: none; }
+.ribbon-handle { position: relative; flex-direction: column; gap: 0; width: 48px; height: 60px; padding: 4px 0; border-radius: 18px; background: rgba(255,250,243,.96); box-shadow: var(--shadow); }
+.ribbon-dots { font-size: 1.4rem; line-height: 1; font-weight: 800; }
+.ribbon-label { font-size: .62rem; color: var(--ink-2); }
+.ribbon.open .ribbon-handle { background: var(--ink); color: #fff; }
+.ribbon.open .ribbon-label { color: #fff; }
+.ribbon-handle[data-badge]::after { content: attr(data-badge); position: absolute; top: -5px; right: -5px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: .7rem; font-weight: 800; display: grid; place-items: center; }
+.ribbon-list { display: none; flex-direction: column; gap: 4px; padding: 8px; background: rgba(255,250,243,.97); border-radius: 20px; box-shadow: var(--shadow); }
+.ribbon.open .ribbon-list { display: flex; animation: ribbon-in .18s ease-out; }
+@keyframes ribbon-in { from { transform: translateY(10px); opacity: 0; } }
+.ribbon-btn { flex-direction: row; justify-content: flex-start; gap: 12px; min-width: 156px; padding: 9px 14px; }
+.ribbon-btn .dock-label { font-size: .95rem; color: var(--ink); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .ribbon.open .ribbon-list { animation: none; } }
+
 /* ---------- build bar ---------- */
 .buildbar { position: absolute; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); background: rgba(255,250,243,.97); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px; max-width: 760px; margin: 0 auto; }
 .buildbar-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }

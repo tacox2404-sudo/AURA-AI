@@ -5,7 +5,10 @@
 // ui.screen(el) / ui.closeScreen()                   -> full-screen pages (login, onboarding)
 // ui.panel({ title, body, wide })                    -> bottom sheet on phones, side card on desktop
 // ui.toast('text')                                   -> small message
-// ui.addDockButton({ id, icon, label, onClick, visible })  -> buttons in the bottom dock
+// ui.addDockButton({ id, icon, label, onClick, visible, group })  -> buttons in the bottom dock.
+//    group 'main' (default) = the bottom bar (keep it to the few things people do all the time).
+//    group 'more'           = the "⋯ More" ribbon on the right edge (people, friends, scores, wardrobe, help).
+// ui.openRibbon() / ui.closeRibbon() / ui.setRibbonBadge(n)
 // ui.setTopbar({ title, tabs, active, onTab, right }) -> the top bar
 
 export function h(tag, props = {}, ...children) {
@@ -31,7 +34,15 @@ export function createUI(root) {
   const sheetLayer = h('div', { class: 'sheet-layer' });
   const screenLayer = h('div', { class: 'screen-layer hidden' });
   const toasts = h('div', { class: 'toasts' });
-  root.append(topbar, dock, sheetLayer, screenLayer, toasts);
+  // The "⋯ More" ribbon: a small handle on the right edge that opens a vertical list of buttons.
+  let ribbonOpen = false;
+  const ribbonList = h('div', { class: 'ribbon-list' });
+  const ribbonHandle = h('button', { class: 'ribbon-handle', 'aria-label': 'More', onclick: () => setRibbon(!ribbonOpen) },
+    h('span', { class: 'ribbon-dots' }, '⋯'), h('span', { class: 'ribbon-label' }, 'More'));
+  const ribbon = h('div', { class: 'ribbon empty' }, ribbonList, ribbonHandle);
+  function setRibbon(on) { ribbonOpen = !!on; ribbon.classList.toggle('open', ribbonOpen); }
+  document.addEventListener('pointerdown', (e) => { if (ribbonOpen && !ribbon.contains(e.target)) setRibbon(false); }, true);
+  root.append(topbar, dock, ribbon, sheetLayer, screenLayer, toasts);
 
   const dockButtons = [];
   addEventListener('keydown', (e) => { if (e.key === 'Escape') ui.closePanel(); });
@@ -91,16 +102,24 @@ export function createUI(root) {
       setTimeout(() => t.remove(), ms + 400);
     },
 
-    addDockButton({ id, icon, label, onClick, visible = () => true, order = 50 }) {
-      dockButtons.push({ id, icon, label, onClick, visible, order });
+    addDockButton({ id, icon, label, onClick, visible = () => true, order = 50, group = 'main' }) {
+      dockButtons.push({ id, icon, label, onClick, visible, order, group });
       dockButtons.sort((a, b) => a.order - b.order);
       ui.refreshDock();
     },
     refreshDock(state) {
-      dock.replaceChildren(...dockButtons.filter((b) => b.visible(state)).map((b) =>
-        h('button', { class: 'dock-btn', 'data-id': b.id, onclick: b.onClick }, h('span', { class: 'dock-icon' }, b.icon), h('span', { class: 'dock-label' }, b.label))));
+      const shown = dockButtons.filter((b) => b.visible(state));
+      const make = (b, inRibbon) => h('button', { class: 'dock-btn' + (inRibbon ? ' ribbon-btn' : ''), 'data-id': b.id, onclick: () => { if (inRibbon) setRibbon(false); b.onClick(); } },
+        h('span', { class: 'dock-icon' }, b.icon), h('span', { class: 'dock-label' }, b.label));
+      dock.replaceChildren(...shown.filter((b) => b.group !== 'more').map((b) => make(b, false)));
+      ribbonList.replaceChildren(...shown.filter((b) => b.group === 'more').map((b) => make(b, true)));
+      ribbon.classList.toggle('empty', !ribbonList.children.length);
     },
-    setDockVisible(on) { dock.classList.toggle('hidden', !on); topbar.classList.toggle('hidden', !on); },
+    openRibbon() { setRibbon(true); },
+    closeRibbon() { setRibbon(false); },
+    /** A small dot with a number on the ribbon handle (e.g. pending friend requests). 0 hides it. */
+    setRibbonBadge(n) { if (n > 0) ribbonHandle.setAttribute('data-badge', String(n)); else ribbonHandle.removeAttribute('data-badge'); },
+    setDockVisible(on) { dock.classList.toggle('hidden', !on); topbar.classList.toggle('hidden', !on); ribbon.classList.toggle('hidden', !on); if (!on) setRibbon(false); },
 
     setTopbar({ title = '', tabs = [], active = null, onTab, right = null }) {
       topbar.replaceChildren(
