@@ -14,3 +14,4 @@ Newest at the bottom. 2-4 lines per session: date, area, what changed, what's ne
 - 2026-11-25 · social · People panel: promote/demote/remove buttons (with confirm), 'Leave this house' in the menu, removed members are sent back to the house list. Next: smoke step, then login page + friends.
 - 2026-11-25 · social · New landing page + login (hero, rotating taglines, features, how it works, ways to join, demo link), silly loading/knocking lines when logging in, creating and joining. Next: friends list across houses, nicer URL (needs hosting choice), optional recovery email.
 - 2026-11-25 · core · Demo backend remembers the signed-in user per tab (two tabs no longer confuse role checks). Smoke test: owner promotes a guest through the People panel and a member leaves the house.
+- 2026-11-25 · core · Backend API: sendFriendRequest, respondFriendRequest, removeFriend, listFriends in local.js and supabase.js, documented in CONTRACTS.md. Next: Friends panel (social).

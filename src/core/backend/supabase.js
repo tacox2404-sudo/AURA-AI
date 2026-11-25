@@ -105,6 +105,15 @@ export function createSupabaseBackend(url, anonKey) {
       must(await sb.rpc('leave_house', { p_house: houseId }));
     },
 
+    // ---------- friends (the rules live in the SQL functions in supabase/schema.sql) ----------
+    async sendFriendRequest(username) { return must(await sb.rpc('send_friend_request', { p_username: username })); }, // 'sent' | 'accepted'
+    async respondFriendRequest(userId, accept) { must(await sb.rpc('respond_friend_request', { p_user: userId, p_accept: !!accept })); },
+    async removeFriend(userId) { must(await sb.rpc('remove_friend', { p_user: userId })); },
+    async listFriends() {
+      const rows = must(await sb.rpc('list_friends')) || [];
+      return rows.map((r) => ({ id: r.user_id, username: r.username, avatar: r.avatar || null, status: r.status }));
+    },
+
     // ---------- chat ----------
     async listMessages(houseId, limit = 60) {
       const rows = must(await sb.from('messages').select('*').eq('house_id', houseId).order('id', { ascending: false }).limit(limit));

@@ -31,6 +31,7 @@ export function createLocalBackend() {
   const users = () => read('op:users', {});
   const houses = () => read('op:houses', {});
   let current = null; // who is signed in on THIS tab (op:session is shared by all tabs in demo mode)
+  const actingUser = () => { const id = current || read('op:session', null); if (!id) throw new Error('Not signed in'); return id; };
 
   return {
     mode: 'demo',
@@ -132,6 +133,48 @@ export function createLocalBackend() {
       if (mine === 'owner') throw new Error('The owner cannot leave their own house');
       delete house.members[me];
       write('op:houses', all);
+    },
+
+    // ---------- friends (same rules as the SQL functions in supabase/schema.sql) ----------
+    // A request goes from one user to another and stays 'pending' until accepted.
+    // If both people ask each other, they become friends right away.
+    async sendFriendRequest(username) {
+      const me = actingUser();
+      const other = Object.values(users()).find((u) => u.username.toLowerCase() === String(username).trim().toLowerCase());
+      if (!other) throw new Error('No player with that username');
+      if (other.id === me) throw new Error('That is you!');
+      const list = read('op:friends', []);
+      const mine = list.find((f) => f.from === me && f.to === other.id);
+      const theirs = list.find((f) => f.from === other.id && f.to === me);
+      if (mine?.status === 'accepted' || theirs?.status === 'accepted') throw new Error('You are already friends');
+      if (mine) throw new Error('Request already sent');
+      if (theirs) { theirs.status = 'accepted'; write('op:friends', list); return 'accepted'; }
+      list.push({ from: me, to: other.id, status: 'pending' });
+      write('op:friends', list);
+      return 'sent';
+    },
+    async respondFriendRequest(userId, accept) {
+      const me = actingUser();
+      const list = read('op:friends', []);
+      const req = list.find((f) => f.from === userId && f.to === me && f.status === 'pending');
+      if (!req) throw new Error('No request from that person');
+      if (accept) req.status = 'accepted';
+      else list.splice(list.indexOf(req), 1);
+      write('op:friends', list);
+    },
+    async removeFriend(userId) {
+      const me = actingUser();
+      write('op:friends', read('op:friends', []).filter((f) => !((f.from === me && f.to === userId) || (f.from === userId && f.to === me))));
+    },
+    // -> [{ id, username, avatar, status: 'friend' | 'incoming' | 'outgoing' }]
+    async listFriends() {
+      const me = actingUser();
+      const all = users();
+      return read('op:friends', []).filter((f) => f.from === me || f.to === me).map((f) => {
+        const otherId = f.from === me ? f.to : f.from;
+        const o = all[otherId] || { username: 'someone', avatar: null };
+        return { id: otherId, username: o.username, avatar: o.avatar || null, status: f.status === 'accepted' ? 'friend' : f.from === me ? 'outgoing' : 'incoming' };
+      });
     },
 
     // ---------- chat ----------

@@ -76,6 +76,8 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 `mode`, `getSession`, `signUp`, `signIn`, `signOut`, `updateProfile`,
 `listMyHouses`, `createHouse`, `getHouse`, `saveHouse`, `joinWithCode`,
 `setMemberRole(houseId, userId, 'housemate' | 'guest') -> House`, `removeMember(houseId, userId) -> House`, `leaveHouse(houseId)`,
+`sendFriendRequest(username) -> 'sent' | 'accepted'`, `respondFriendRequest(userId, accept)`, `removeFriend(userId)`,
+`listFriends() -> [{ id, username, avatar, status: 'friend' | 'incoming' | 'outgoing' }]`,
 `listMessages`, `sendMessage`, `getState`, `setState`, `addPoints`, `listPoints`,
 `connect(houseId, me, { onPresence, onEvent }) -> { updatePresence, send, leave }`,
 `generateRoom(prompt, catalogIds, activityIds)`, `linkPreview(url)`.
@@ -83,5 +85,8 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 Member rules (demo and Supabase behave the same): housemates can promote/remove guests; only the owner
 can demote/remove housemates; the owner can't be changed, removed or leave. After changing members,
 send the existing `house-updated` live event so everyone reloads.
+
+Friends: a request stays 'pending' until the other person accepts; if both people ask each other they become
+friends right away. Declining or removing deletes the row. `removeFriend` also cancels a request you sent.
 
 Changing this API means changing BOTH `local.js` and `supabase.js` (lead only).
