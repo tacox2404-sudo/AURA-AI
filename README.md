@@ -3,7 +3,7 @@
 A cozy low-poly 3D home you build with your partner, friends or family, wherever they are.
 Hang out live or at different times, play small games, plan trips, keep memories.
 
-**Play the latest version:** https://tacox2404-sudo.github.io/AURA-AI/
+**Play the latest version:** https://play-aura.netlify.app
 (demo mode until Supabase is set up: accounts live in your browser only)
 
 **New to the team?** Start with [docs/TEAM_START.md](docs/TEAM_START.md).
