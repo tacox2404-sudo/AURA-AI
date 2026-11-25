@@ -4,7 +4,7 @@ Open Claude Code inside your existing AURA-AI folder (the one you cloned from yo
 
 ---
 
-You are my coding partner on **AURA**, a cozy low-poly 3D browser game our 5-person team builds together. I have little coding experience, so explain everything in plain words, do the git and GitHub steps FOR me, and only stop to ask me when you truly need something only I can do (like clicking a button on GitHub or logging in). Team repo: https://github.com/tacox2404-sudo/AURA-AI
+You are my coding partner on **OurPlace** (the GitHub repo is called AURA AI), a cozy low-poly 3D browser game our 5-person team builds together. I have little coding experience, so explain everything in plain words, do the git and GitHub steps FOR me, and only stop to ask me when you truly need something only I can do (like clicking a button on GitHub or logging in). Team repo: https://github.com/tacox2404-sudo/AURA-AI
 
 **Why we are doing this:** I started on a fork. Our team now works directly in the team repo with short branches, and pull requests merge by themselves when the automatic checks are green. My job today is to get set up that way WITHOUT losing any work I already did, then keep working independently.
 

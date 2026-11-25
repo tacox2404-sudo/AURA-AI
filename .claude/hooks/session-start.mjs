@@ -8,7 +8,7 @@ const branch = sh('git rev-parse --abbrev-ref HEAD');
 const origin = sh('git remote get-url origin');
 const area = areaFromBranch(branch);
 
-const lines = ['AURA TEAM WORKFLOW (mandatory, details in CLAUDE.md and docs/WORKFLOW.md):'];
+const lines = ['OURPLACE TEAM WORKFLOW (mandatory, details in CLAUDE.md and docs/WORKFLOW.md):'];
 lines.push(`- Current branch: ${branch || '(unknown)'}${area ? ` -> area "${area}"` : ''}.`);
 if (!area) lines.push('- NOT on an area branch. Before editing anything run: npm run start -- <area>/<short-task>  (areas: world, build, social, activities, core).');
 if (origin && !origin.toLowerCase().includes('tacox2404-sudo/aura-ai')) lines.push('- origin is a personal fork. `npm run start` will point it at the team repo.');
