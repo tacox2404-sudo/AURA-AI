@@ -120,10 +120,10 @@ export function houseTourSteps(house, role, defOf) {
   steps.push(editor
     ? { say: '🛠️ Build: place, move, rotate, delete. Furniture has no feelings. Probably.', mood: 'wink', point: 'build' }
     : { say: `You're a guest, so you can look, chat and play. Rearranging the furniture is above your pay grade.`, mood: 'wink' });
-  steps.push({ say: '💬 Chat and 👥 People: invite codes, who is home, and roles. Owners can open the house to visiting friends.', mood: 'happy', point: 'people' });
+  steps.push({ say: '💬 Chat is in the bar. 👥 People lives under ⋯ More: invite codes, who is home, roles. Owners can open the house to visitors.', mood: 'happy', point: 'people' });
   steps.push({ say: '🤝 Friends: add people by username, visit their open houses, even when they are not home.', mood: 'wow', point: 'friends' });
   steps.push({ say: '👕 Wardrobe: outfits! And 🏆 points for everything. Nothing is locked behind them. Just glory.', mood: 'love', point: 'wardrobe' });
-  steps.push({ say: `That's the tour! Tap ❓ Guide any time to replay it, or to ask me about a room or an object.`, mood: 'love' });
+  steps.push({ say: `That's the tour! Find me any time under ⋯ More → ❓ Guide: replay the tour, or ask about a room or an object.`, mood: 'love' });
   return steps;
 }
 
@@ -131,6 +131,7 @@ export function houseTourSteps(house, role, defOf) {
 export const CHEAT_SHEET = [
   ['🚪 Rooms', 'Switch rooms, add rooms, or let AI build one from a sentence.'],
   ['🛠️ Build', 'Housemates place, move, rotate and delete furniture.'],
+  ['⋯ More', 'The ribbon on the right edge holds People, Friends, Scores, Wardrobe and this Guide.'],
   ['👕 Wardrobe', 'Change your look any time.'],
   ['🎲 Play', 'Connect Four, Tic-Tac-Toe, Draw & Guess. Live or turn by turn.'],
   ['💬 Chat', 'Talk, send nudges, see speech bubbles.'],

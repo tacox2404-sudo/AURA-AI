@@ -112,7 +112,7 @@ export function createGuide(ctx) {
 
       const finish = (result) => {
         clearInterval(typing); document.removeEventListener('keydown', onKey, true);
-        clearHighlight(); layer?.remove(); layer = null; run = null; resolve(result);
+        clearHighlight(); ui.closeRibbon?.(); layer?.remove(); layer = null; run = null; resolve(result);
       };
       run = { finish };
 
@@ -122,7 +122,8 @@ export function createGuide(ctx) {
         const step = steps[i];
         clearHighlight();
         if (step.room) bus.emit('room:goto', { roomId: step.room });
-        if (step.point) { const el = document.querySelector(`.dock-btn[data-id="${step.point}"]`); if (el) { el.classList.add('gd-hl'); el.scrollIntoView?.({ inline: 'center', block: 'nearest' }); } }
+        ui.closeRibbon?.();
+        if (step.point) { const el = document.querySelector(`.dock-btn[data-id="${step.point}"]`); if (el) { if (el.closest('.ribbon')) ui.openRibbon?.(); el.classList.add('gd-hl'); } }
         [...dots.children].forEach((d, k) => d.classList.toggle('on', k <= i));
         full = step.say; shown = 0; text.textContent = '';
         setMood(step.mood); pip.classList.add('talk');

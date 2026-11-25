@@ -223,7 +223,7 @@ export function initSocial(ctx) {
     catch { ui.ask({ title: 'Copy this', text, ok: 'Done' }); }
   }
   ctx.provide('social.openPeople', openPeople);
-  ui.addDockButton({ id: 'people', icon: '👥', label: 'People', onClick: openPeople, order: 50 });
+  ui.addDockButton({ id: 'people', icon: '👥', label: 'People', onClick: openPeople, order: 50, group: 'more' });
 
   // ---------- house menu ----------
   ctx.provide('social.openMenu', () => {

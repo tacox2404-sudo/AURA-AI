@@ -89,7 +89,7 @@ export function initFriends(ctx, { enterHouse } = {}) {
   }
 
   ctx.provide('social.openFriends', () => openFriends());
-  ui.addDockButton({ id: 'friends', icon: '🤝', label: 'Friends', onClick: () => openFriends(), order: 55 });
+  ui.addDockButton({ id: 'friends', icon: '🤝', label: 'Friends', onClick: () => openFriends(), order: 55, group: 'more' });
 
   // Gentle heads-up when someone sends you a request (checked when you enter a house and every minute).
   let lastIncoming = 0;
@@ -97,8 +97,9 @@ export function initFriends(ctx, { enterHouse } = {}) {
     if (!store.get().me) return;
     try {
       const n = (await backend.listFriends()).filter((f) => f.status === 'incoming').length;
-      if (n > lastIncoming) ui.toast(`You have ${n} friend request${n > 1 ? 's' : ''} 💌 (open 🤝 Friends)`);
+      if (n > lastIncoming) ui.toast(`You have ${n} friend request${n > 1 ? 's' : ''} 💌 (open ⋯ More → 🤝 Friends)`);
       lastIncoming = n;
+      ui.setRibbonBadge?.(n); // a dot on the ⋯ More handle
     } catch { /* offline: try again next minute */ }
   }
   bus.on('house:entered', checkRequests);
