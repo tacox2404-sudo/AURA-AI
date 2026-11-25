@@ -22,7 +22,20 @@ things that belong to other areas (copy them into GitHub Issues with the right `
   id. It wanders, comes over when you're far, curls up when you sit, naps at night. Tap it for hearts
   (+1 point, at most every 10 minutes).
 
+## Shipped: the penthouse (`world/penthouse-floors`)
+
+- The whole house is one 3D building: 2 rooms per floor (in the order of `house.rooms`), the Entrance on the
+  ground floor with a front door and a garden path, the top floor is the **Penthouse** with a roof terrace
+  (parasol + lounger). Rooms on a floor share a wall with an open doorway: just walk through.
+- Every floor has a wooden balcony with railings and plants; a **spiral staircase** outside joins them.
+  Tap ▲ / ▼ (left side), the stairs, or the ⬆ / ⬇ signs: your avatar walks out, climbs step by step, and the
+  camera follows; the next floor appears halfway up. Tap anything in another room or on another floor and
+  your avatar walks there by itself. Zoom out to see the whole building.
+- Floors above you are hidden, floors below show their outside walls and windows (like a doll's house).
+
 ## Next ideas for World (rough order)
+
+0. **Elevator** next to the stairs for big houses, and a **rooftop** you can walk on.
 
 1. **Pet you can name and dress** (collar colour, a little hat). Save it with the house (needs a `house.pet`
    field: see the Social Issue below).
@@ -44,9 +57,15 @@ things that belong to other areas (copy them into GitHub Issues with the right `
 **Why:** the pet looks for a `cat_bed` to nap in (World will add that once it exists), and new Seating items are
 automatically sittable. Glowing items: tell World their id and the height of the light so they glow at night.
 
-### area:build: "Keep one wall cell free for a door"
-**What:** in `layout.js`, try to leave a free cell in the middle of the left wall and the back-left of the back wall.
-**Why:** World puts doors on free wall cells. In very full rooms a door can end up on the front wall (only its mat and sign show).
+### area:build: "Keep doorway cells free"
+**What:** in `layout.js`, keep the right wall cell at about 55% of the depth free (doorway to the next room), the left wall
+cell at the same spot free, and the right wall cell at z = 1 free (balcony door). The house is now a building with
+2 rooms per floor, see `src/world/building.js`.
+**Why:** World puts doorways on free wall cells next to the neighbour room. In very full rooms the doorway can end up next to furniture.
+
+### area:build: "Choose which floor a room is on"
+**What:** in the Rooms panel, ↑ / ↓ buttons that move a room earlier or later in `house.rooms` (World stacks rooms 2 per floor in that order).
+**Why:** people will want to put the bedroom upstairs and the kitchen downstairs.
 
 ### area:social: "Save the house pet"
 **What:** an optional `house.pet = { name, kind: 'cat' | 'dog', coat }` saved with the house, plus a small "Rename pet" row in the house menu.

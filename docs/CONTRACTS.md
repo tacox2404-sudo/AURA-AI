@@ -67,7 +67,8 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 | `build.makeHouse(answers)` | Building | starter house from onboarding answers |
 | `build.houseTypes()`, `build.vibes()` | Building | lists for onboarding |
 | `world.openWardrobe(firstTime)` | World | opens the wardrobe |
-| `world.goToRoom(roomId)` | World | walk to the door of that room and go through it (false if this room has no door to it). Every room has a door to each other room (up to 6), worked out from `house.rooms`, nothing is saved |
+| `world.goToRoom(roomId)` | World | walk to that room for real (through doorways, and up/down the spiral stairs); false if there is no such room |
+| `world.floor()` | World | `{ floor, floors, name }`: which floor I'm on (0 = ground floor). The house is shown as one building: `house.rooms` in order, 2 rooms per floor (the first room = the Entrance, on the ground floor; the top floor = Penthouse). Nothing is saved; `roomId` still means the room I'm in and changes when I walk through a doorway |
 | `world.emote(id)` | World | play an emote on my avatar and show it to everyone (`wave`, `dance`, `cheer`, `jump`, `laugh`, `sleep`, `heart`) |
 | `world.sitOn(itemId)`, `world.standUp()`, `world.isSitting()` | World | walk to a seat (sofa, chair...) in the current room and sit; stand up; am I sitting? Others see it through Presence `sit`/`sy`/`ry` |
 | `house.save(house)` | Social | saves + tells everyone to reload |
