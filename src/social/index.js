@@ -4,6 +4,7 @@
 
 import { loginScreen, housePicker, onboarding, friendly } from './screens.js';
 import { loadingLine, knockLine } from './fun.js';
+import { initFriends } from './friends.js';
 import { initChat } from './chat.js';
 import { initPoints } from './points.js';
 
@@ -27,6 +28,7 @@ export function initSocial(ctx) {
 
   initChat(ctx);
   initPoints(ctx);
+  const friends = initFriends(ctx);
 
   // ---------- flow: login -> pick house -> enter ----------
   async function start() {
@@ -65,6 +67,7 @@ export function initSocial(ctx) {
       onCreate: () => onboarding(ctx, { me, onCancel: showPicker, onDone: createHouse }),
       onJoin: async (code) => { ui.toast(knockLine()); const { house, role } = await backend.joinWithCode(code, me); joinParam = ''; enterHouse(house, role); },
       onLogout: signOut,
+      onFriends: () => friends.openFriends({ onBack: showPicker }),
     });
   }
 
@@ -214,6 +217,7 @@ export function initSocial(ctx) {
     ui.panel({ title: s.house?.name || 'Menu', body: h('div', { class: 'list' },
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); showPicker(); } }, '🏘️ Switch or create house'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); openPeople(); } }, '👥 Invite people'),
+      h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('social.openFriends')(); } }, '🤝 Friends'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('world.openWardrobe')(false); } }, '👕 Wardrobe'),
       s.role !== 'owner' ? h('button', { class: 'row-main', onclick: () => { ui.closePanel(); quitHouse(); } }, '👋 Leave this house') : null,
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); signOut(); } }, '🚪 Log out'),

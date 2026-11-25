@@ -122,7 +122,7 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     h('p', { class: 'al-foot' }, 'Free, friendly and non-commercial. Made with 💛 by the AURA team.')));
 }
 
-export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, joinCode = '' }) {
+export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, onFriends, joinCode = '' }) {
   const { ui } = ctx; const { h } = ui;
   const code = h('input', { placeholder: 'Invite code, e.g. K7Q2XD', value: joinCode, maxlength: 12, style: { textTransform: 'uppercase' } });
   const err = h('p', { class: 'error' });
@@ -133,6 +133,7 @@ export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogou
       h('span', {}, h('b', {}, house.name), h('small', {}, `${house.rooms?.length || 0} rooms · you are ${house.members?.[me.id]?.role || 'member'}`)))))
       : h('p', { class: 'muted' }, "You don't have a house yet. Create one, or join a friend's with their code."),
     h('div', { class: 'card' }, h('button', { class: 'primary wide', onclick: onCreate }, '＋ Create a new house')),
+    onFriends ? h('div', { class: 'card' }, h('button', { class: 'wide', onclick: onFriends }, '🤝 Friends')) : null,
     h('div', { class: 'card form' }, h('h4', {}, 'Join a house'), code, err,
       h('button', { class: 'wide', onclick: async () => { err.textContent = ''; try { await onJoin(code.value); } catch (e) { err.textContent = friendly(e.message); } } }, 'Join'))));
 }

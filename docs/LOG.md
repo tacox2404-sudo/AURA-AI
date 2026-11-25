@@ -16,3 +16,4 @@ Newest at the bottom. 2-4 lines per session: date, area, what changed, what's ne
 - 2026-11-25 · core · Demo backend remembers the signed-in user per tab (two tabs no longer confuse role checks). Smoke test: owner promotes a guest through the People panel and a member leaves the house.
 - 2026-11-25 · core · Backend API: sendFriendRequest, respondFriendRequest, removeFriend, listFriends in local.js and supabase.js, documented in CONTRACTS.md. Next: Friends panel (social).
 - 2026-11-25 · social · schema.sql: friends table + send_friend_request, respond_friend_request, remove_friend, list_friends. Next: backend API (core), then the Friends panel.
+- 2026-11-25 · social · Friends panel (dock button, house menu, and a full page from the house list): add by username, accept/decline, remove, cancel, copy a guest invite to your house, request heads-up. Next: smoke step for the flow, then visiting friends' houses (needs a design).
