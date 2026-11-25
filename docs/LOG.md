@@ -23,3 +23,4 @@ Newest at the bottom. 2-4 lines per session: date, area, what changed, what's ne
 - 2026-11-25 · core · join-team prompt: clearer 'accept the invitation' step (open the page, what to click, wrong-account and expired cases).
 - 2026-11-25 · social · schema.sql: list_friend_houses + visit_house (friends of an owner can visit houses the owner opened, as guests). Next: backend API (core), then the toggle and Visit list.
 - 2026-11-25 · core · Backend API: listFriendHouses, visitHouse (demo + Supabase), house.friendsCanVisit in CONTRACTS. Next: owner switch + Visit list (social).
+- 2026-11-25 · social · Visiting friends: owner switch 'Friends can visit' in the People panel, and a 'Friends' houses you can visit' list with Visit buttons in the Friends page (joins as a guest). Next: smoke step; then nicer URL and recovery email.

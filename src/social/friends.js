@@ -4,7 +4,7 @@
 
 import { friendly } from './screens.js';
 
-export function initFriends(ctx) {
+export function initFriends(ctx, { enterHouse } = {}) {
   const { ui, store, backend, bus } = ctx; const { h } = ui;
 
   // opts.onBack: show as a full page (used from the house list, where sheets are hidden behind the page)
@@ -37,6 +37,8 @@ export function initFriends(ctx) {
     async function refresh() {
       let list = [];
       try { list = await backend.listFriends(); } catch (e) { ui.toast(friendly(e.message)); }
+      let open = [];
+      try { open = await backend.listFriendHouses(); } catch { /* older backend or offline: just skip this section */ }
       const incoming = list.filter((f) => f.status === 'incoming');
       const friends = list.filter((f) => f.status === 'friend');
       const outgoing = list.filter((f) => f.status === 'outgoing');
@@ -45,6 +47,9 @@ export function initFriends(ctx) {
         incoming.length ? h('div', {}, h('h4', {}, `Requests (${incoming.length})`), h('div', { class: 'list' }, ...incoming.map((f) => row(f,
           h('button', { title: 'Accept', onclick: () => act(() => backend.respondFriendRequest(f.id, true), `You and ${f.username} are now friends 🎉`) }, '✅'),
           h('button', { title: 'Decline', onclick: () => act(() => backend.respondFriendRequest(f.id, false)) }, '❌')))) ) : null,
+        open.length ? h('div', {}, h('h4', {}, `Friends' houses you can visit (${open.length})`), h('div', { class: 'list' }, ...open.map((o) => h('div', { class: 'row' },
+          h('span', { class: 'row-main' }, `🏠 ${o.name}`, h('small', {}, ` by ${o.ownerName}`)),
+          h('span', { class: 'row-btns' }, h('button', { class: 'primary', onclick: () => visit(o) }, 'Visit')))))) : null,
         h('h4', {}, `Friends (${friends.length})`),
         friends.length ? h('div', { class: 'list' }, ...friends.map((f) => row(f,
           house ? h('button', { title: 'Copy a guest invite to your current house', onclick: () => inviteFriend(f) }, '💌') : null,
@@ -52,6 +57,16 @@ export function initFriends(ctx) {
           : h('p', { class: 'muted' }, 'No friends yet. Add someone by their username above.'),
         outgoing.length ? h('div', {}, h('h4', {}, 'Waiting for an answer'), h('div', { class: 'list' }, ...outgoing.map((f) => row(f,
           h('button', { title: 'Cancel request', onclick: () => act(() => backend.removeFriend(f.id), 'Request cancelled') }, '✖️')))) ) : null].filter(Boolean)); // drop empty sections (null would print as text)
+    }
+
+    // Walk into a friend's open house as a guest (look around, chat, play; no building).
+    async function visit(o) {
+      try {
+        const { house, role } = await backend.visitHouse(o.id);
+        ui.closePanel();
+        ui.toast(`Welcome to ${house.name}! You are visiting as a ${role} 👋`);
+        enterHouse?.(house, role);
+      } catch (e) { ui.toast(friendly(e.message)); refresh(); }
     }
 
     // Friends can't be messaged directly yet, so copy a ready-to-send invite to this house.

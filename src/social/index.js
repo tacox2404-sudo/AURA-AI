@@ -28,7 +28,7 @@ export function initSocial(ctx) {
 
   initChat(ctx);
   initPoints(ctx);
-  const friends = initFriends(ctx);
+  const friends = initFriends(ctx, { enterHouse: (house, role) => enterHouse(house, role) });
 
   // ---------- flow: login -> pick house -> enter ----------
   async function start() {
@@ -165,10 +165,22 @@ export function initSocial(ctx) {
         h('button', { title: 'Remove from house', onclick: () => removePerson(id, m) }, '🚫')) : null);
     ui.panel({ title: '👥 People', body: h('div', {},
       h('div', { class: 'list' }, ...Object.entries(s.house.members || {}).map(memberRow)),
+      s.role === 'owner' ? h('div', { class: 'card' }, h('b', {}, 'Visits'),
+        h('p', { class: 'muted small' }, 'When on, your friends can drop by as guests (look around, chat and play, no building), even when you are away. You can remove a visitor any time.'),
+        h('button', { class: s.house.friendsCanVisit ? 'primary' : '', onclick: toggleVisits }, s.house.friendsCanVisit ? '🔓 Friends can visit: ON (tap to turn off)' : '🔒 Friends can visit: OFF (tap to turn on)')) : null,
       h('h4', {}, 'Invite people'),
       isEditor ? inviteBlock('Housemate code: can build and decorate', s.house.inviteCode, 'housemate') : null,
       inviteBlock('Guest code: can visit, chat and play', s.house.guestCode, 'guest'),
       backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: invites only work in this browser. Set up Supabase (docs/SETUP.md) to invite people on other phones.') : null) });
+  }
+  // The owner opens or closes the house for visits by their friends.
+  async function toggleVisits() {
+    const house = store.get().house;
+    const on = !house.friendsCanVisit;
+    if (on && !(await ui.confirm('Let friends visit?', 'Your friends will see this house in their Friends page and can join as guests. Guests cannot build.', 'Turn on'))) return;
+    await ctx.use('house.save')({ ...house, friendsCanVisit: on });
+    ui.toast(on ? 'Friends can visit now 🔓' : 'Visits are off 🔒');
+    openPeople();
   }
   // Promote / demote / remove, with a confirm first. Then tell everyone else to reload.
   async function afterMembersChanged(house, message) {
