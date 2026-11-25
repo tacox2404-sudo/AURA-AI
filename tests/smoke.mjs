@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, and a friend can visit an opened house as a guest.
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, a friend can visit an opened house as a guest, and the in-game guide (Pip) greets a new player, can be skipped and reopened.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -185,6 +185,32 @@ try {
   await c.waitForTimeout(1500);
   const visit = await c.evaluate(() => { const s = window.__ourplace.store.get(); return { id: s.house?.id, role: s.role }; });
   if (visit.id !== houseId || visit.role !== 'guest') throw new Error(`Visit gave house ${visit.id} as "${visit.role}", expected the friend's house as guest`);
+
+  log('guide: Pip welcomes a new player, can be skipped, and comes back from the menu');
+  await c.close(); // fewer 3D pages open at once keeps the robot fast
+  const gctx = await browser.newContext({ viewport: { width: 390, height: 800 } }); // fresh profile: the guide is ON here
+  const g = await gctx.newPage(); watch(g, 'G');
+  await g.goto(URL); await g.waitForTimeout(600);
+  await signUp(g, 'tester_g');
+  await g.waitForTimeout(500);
+  await g.click('text=Create a new house');
+  await g.click('text=Solo Studio');
+  await g.click('text=Next');
+  await g.click('text=Modern loft');
+  await g.click('.card.form .primary');
+  await g.waitForTimeout(1500);
+  if (await g.locator('text=Save look').count()) await g.click('text=Save look');
+  await g.locator('.gd-text').waitFor({ timeout: 20000 }); // Pip shows up by himself
+  await g.waitForFunction(() => /Pip/.test(document.querySelector('.gd-text')?.textContent || ''), null, { timeout: 8000 });
+  await g.click('.gd-skip');
+  await g.waitForTimeout(300);
+  if (await g.locator('.gd').count()) throw new Error('Pip is still on screen after Skip');
+  await g.evaluate(() => window.__ourplace.use('social.openGuide')());
+  await g.waitForTimeout(300);
+  await g.click('text=Explain this room');
+  await g.waitForFunction(() => /Entrance/.test(document.querySelector('.gd-text')?.textContent || ''), null, { timeout: 8000 });
+  await g.click('.gd-skip');
+  await gctx.close();
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
