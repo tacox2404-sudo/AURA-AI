@@ -3,7 +3,8 @@
 // Furniture meshes come from the Building area through ctx.use('build.itemMesh').
 
 import * as THREE from 'three';
-import { buildAvatar, animateAvatar, nameTag, randomAppearance } from './avatar.js';
+import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance } from './avatar.js';
+import { isSeat, seatSlots } from './seats.js';
 import { initWardrobe } from './wardrobe.js';
 import { makeWalkGrid } from './walkGrid.js';
 import { currentRoom } from '../core/store.js';
@@ -99,20 +100,24 @@ export function initWorld(ctx) {
     updateWalls();
     // furniture may have moved: re-plan my walk around the new layout
     if (me.path.length) me.path = walk.pathToPoint(me.pos, me.path[me.path.length - 1]) || [];
+    if (me.sit && !room.items.some((i) => i.id === me.sit.item)) standUp(); // my seat was removed
     syncRemotes();
   }
 
   // ---------- my avatar ----------
   // path = list of {x, z} points still to walk through (from the walk grid)
-  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set() };
+  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set(), sit: null, pendingSit: null };
   scene.add(me.holder);
   function rebuildMyAvatar() {
     const s = store.get();
     if (me.av) me.holder.clear();
     me.av = buildAvatar(s.me?.avatar || randomAppearance());
     me.holder.add(me.av, nameTag(s.me?.username || 'me', '#ffe08a'));
+    if (me.sit) setSitting(me.av, true); // a new outfit while sitting: stay seated
   }
   function spawn() {
+    if (me.sit) { me.sit = null; if (me.av) setSitting(me.av, false); me.holder.position.y = 0; }
+    me.pendingSit = null;
     me.pos.set((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
     const free = walk ? walk.nearestFree(me.pos.x, me.pos.z) : me.pos; // never spawn inside furniture
     me.pos.set(free.x, 0, free.z);
@@ -138,10 +143,11 @@ export function initWorld(ctx) {
         holder.add(av, nameTag(p.name || 'friend'));
         holder.position.set(p.x ?? 0, 0, p.z ?? 0);
         scene.add(holder);
-        r = { holder, av, key, target: new THREE.Vector3(p.x ?? 0, 0, p.z ?? 0), bubble: null };
+        r = { holder, av, key, target: new THREE.Vector3(p.x ?? 0, 0, p.z ?? 0), bubble: null, sit: false, ry: 0 };
         remotes.set(p.userId, r);
       }
-      r.target.set(p.x ?? 0, 0, p.z ?? 0);
+      r.sit = !!p.sit; r.ry = p.ry || 0;
+      r.target.set(p.x ?? 0, r.sit ? (p.sy || 0) : 0, p.z ?? 0);
     }
   }
 
@@ -174,7 +180,8 @@ export function initWorld(ctx) {
     lastSent = now;
     const s = store.get();
     if (!s.me || !s.house) return;
-    ctx.use('live.presence')({ roomId: s.roomId, x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), name: s.me.username, avatar: s.me.avatar });
+    ctx.use('live.presence')({ roomId: s.roomId, x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), name: s.me.username, avatar: s.me.avatar,
+      sit: me.sit ? 1 : 0, sy: me.sit ? +me.sit.y.toFixed(3) : 0, ry: me.sit ? +me.sit.ry.toFixed(3) : 0 }); // sit/sy/ry: sitting, how high, which way I face
   }
 
   // ---------- input: tap / click / pinch ----------
@@ -224,6 +231,9 @@ export function initWorld(ctx) {
       const cell = worldToCell(hitItem.point);
       bus.emit('world:tap', { target: 'item', item, cell, room });
       if (store.get().mode === 'play' && item) {
+        const def = ctx.use('build.itemDef')(item.kind);
+        if (isSeat(def)) { trySit(item, hitItem.point); return; } // sofas, chairs...: walk over and sit
+        standUp();
         if (walk) me.path = walk.pathToItem(me.pos, item) || []; // walk up next to it
         bus.emit('item:activate', { item, room });
       }
@@ -233,7 +243,7 @@ export function initWorld(ctx) {
     if (hitFloor) {
       const cell = worldToCell(hitFloor.point);
       bus.emit('world:tap', { target: 'floor', cell, room });
-      if (store.get().mode === 'play' && walk) me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || [];
+      if (store.get().mode === 'play' && walk) { standUp(); me.pendingSit = null; me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || []; }
     }
   }
   const clampToRoom = (p) => { p.x = Math.max(-bounds.w / 2 + 0.3, Math.min(bounds.w / 2 - 0.3, p.x)); p.z = Math.max(-bounds.d / 2 + 0.3, Math.min(bounds.d / 2 - 0.3, p.z)); return p; };
@@ -288,6 +298,51 @@ export function initWorld(ctx) {
     return need;
   }
 
+  // ---------- sitting ----------
+  // Tap a seat: walk up to it, then sit on the free spot nearest to where you tapped.
+  // Tap the floor or press a move key to stand up. Others see it through presence (sit / sy / ry).
+  function trySit(item, point) {
+    const def = ctx.use('build.itemDef')(item.kind);
+    const slots = seatSlots(item, ctx.use('build.footprint')(item) || [1, 1], bounds);
+    const taken = (sl) => [...remotes.values()].some((r) => r.sit && Math.hypot(r.target.x - sl.x, r.target.z - sl.z) < 0.45);
+    const free = slots.filter((sl) => !taken(sl));
+    if (!free.length) return ui.toast(`${def?.name || 'That seat'} is taken 😄`);
+    free.sort((a, b) => Math.hypot(a.x - point.x, a.z - point.z) - Math.hypot(b.x - point.x, b.z - point.z));
+    standUp();
+    me.pendingSit = { item, slot: free[0] };
+    me.path = walk ? walk.pathToItem(me.pos, item) || [] : [];
+  }
+  // Services (also used by the robot test): sit on a seat by its item id, stand up, ask if I'm sitting.
+  ctx.provide('world.sitOn', (itemId) => {
+    const room = currentRoom(store.get());
+    const item = room?.items.find((i) => i.id === itemId);
+    const def = item && ctx.use('build.itemDef')(item.kind);
+    if (!isSeat(def)) return false;
+    const [fw, fd] = ctx.use('build.footprint')(item) || [1, 1];
+    const c = cellToWorld(item.x, item.z, fw, fd);
+    trySit(item, c);
+    return true;
+  });
+  ctx.provide('world.standUp', () => { me.pendingSit = null; standUp(); });
+  ctx.provide('world.isSitting', () => !!me.sit);
+  function startSit() {
+    const { slot, item } = me.pendingSit; me.pendingSit = null;
+    if (Math.hypot(me.pos.x - slot.x, me.pos.z - slot.z) > 2.6) return ui.toast("Can't reach that seat"); // blocked in
+    me.sit = { x: slot.x, z: slot.z, y: slot.y, ry: slot.ry, item: item.id };
+    me.pos.set(slot.x, 0, slot.z); me.path = [];
+    me.holder.rotation.y = slot.ry;
+    setSitting(me.av, true);
+    sendPresence(true);
+  }
+  function standUp() {
+    if (!me.sit) return;
+    const s = me.sit; me.sit = null;
+    setSitting(me.av, false); me.holder.position.y = 0;
+    const spot = walk ? walk.nearestFree(s.x + Math.sin(s.ry), s.z + Math.cos(s.ry)) : { x: s.x + Math.sin(s.ry), z: s.z + Math.cos(s.ry) }; // the spot in front of the seat
+    me.pos.set(spot.x, 0, spot.z); me.path = [];
+    sendPresence(true);
+  }
+
   // Move me to (x, z) if no furniture is there. If blocked, try sliding along it
   // (only x, or only z), so you glide along a sofa instead of getting stuck.
   // If I'm already standing inside furniture (someone built on me), let me walk out.
@@ -321,7 +376,7 @@ export function initWorld(ctx) {
     if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
       const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); // forward on the floor
       const kv = new THREE.Vector3(fx * fwdKey - fz * sideKey, 0, fz * fwdKey + fx * sideKey).normalize();
-      me.path = [];
+      me.path = []; me.pendingSit = null; standUp();
       if (stepTo(me.pos.x + kv.x * SPEED * dt, me.pos.z + kv.z * SPEED * dt)) moving = true;
       turnToward(me.holder, Math.atan2(kv.x, kv.z), dt);
     } else if (me.path.length) {
@@ -333,17 +388,21 @@ export function initWorld(ctx) {
       else { me.pos.x += dx / len * step; me.pos.z += dz / len * step; }
       if (len > 0.001) { turnToward(me.holder, Math.atan2(dx, dz), dt); moving = true; }
     }
+    if (me.pendingSit && !me.path.length && !moving) startSit();
     me.holder.position.copy(me.pos);
+    if (me.sit) me.holder.position.y = me.sit.y;
     if (me.av) animateAvatar(me.av, dt, moving);
     if (moving) sendPresence();
     else if (me.wasMoving) sendPresence(true);
     me.wasMoving = moving;
 
     for (const r of remotes.values()) {
+      setSitting(r.av, r.sit); // sitting or standing, as they told us
       const d = r.target.clone().sub(r.holder.position);
       const mv = d.length() > 0.03;
-      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); r.holder.rotation.y = Math.atan2(d.x, d.z); }
-      animateAvatar(r.av, dt, mv);
+      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); if (!r.sit) r.holder.rotation.y = Math.atan2(d.x, d.z); }
+      if (r.sit) turnToward(r.holder, r.ry, dt);
+      animateAvatar(r.av, dt, mv && !r.sit);
     }
 
     // camera: smooth turn toward the chosen angle, then fit the room on screen.
@@ -371,6 +430,7 @@ export function initWorld(ctx) {
     }
     if (!room && roomGroup) { scene.remove(roomGroup); roomGroup = null; roomRef = null; }
     if (s.players !== prev.players) syncRemotes();
+    if (s.mode === 'build' && prev.mode !== 'build') { me.pendingSit = null; standUp(); } // building: get off the sofa
     if (grid && s.mode !== prev.mode) grid.visible = s.mode === 'build';
     rotateBtn.style.display = s.house ? 'block' : 'none';
   });

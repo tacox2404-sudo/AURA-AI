@@ -24,7 +24,7 @@ House = {
 Room = { id, name, vibe, theme: { floor, wall, accent, wood }, size: [w, d], items: Item[] }
 Item = { id, kind /* catalog id */, x, z /* grid cell */, rot /* 0-3 */, activity?, data?: { url?, label?, key? } }
 
-Presence = { userId, name, avatar, roomId, x, z }
+Presence = { userId, name, avatar, roomId, x, z, sit?: 0 | 1, sy?: number /* seat height */, ry?: number /* facing, radians */ }
 Message  = { id, houseId, userId, name, text, kind: 'text' | 'nudge' | 'system', at }
 ```
 
@@ -67,6 +67,7 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 | `build.makeHouse(answers)` | Building | starter house from onboarding answers |
 | `build.houseTypes()`, `build.vibes()` | Building | lists for onboarding |
 | `world.openWardrobe(firstTime)` | World | opens the wardrobe |
+| `world.sitOn(itemId)`, `world.standUp()`, `world.isSitting()` | World | walk to a seat (sofa, chair...) in the current room and sit; stand up; am I sitting? Others see it through Presence `sit`/`sy`/`ry` |
 | `house.save(house)` | Social | saves + tells everyone to reload |
 | `live.presence(p)`, `live.send(e)` | Social | live connection |
 | `chat.open()`, `chat.send(text, kind)`, `chat.nudge()` | Social | chat |

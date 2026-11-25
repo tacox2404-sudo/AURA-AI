@@ -174,7 +174,7 @@ export function createSupabaseBackend(url, anonKey) {
         emit();
         if ([...info.keys()].some((id) => !before.has(id))) sendPos(true); // someone new arrived: tell them where I am
       });
-      ch.on('broadcast', { event: 'pos' }, ({ payload }) => { if (payload?.userId && payload.userId !== me.id) { pos.set(payload.userId, { roomId: payload.roomId, x: payload.x, z: payload.z }); emit(); } });
+      ch.on('broadcast', { event: 'pos' }, ({ payload }) => { if (payload?.userId && payload.userId !== me.id) { pos.set(payload.userId, { roomId: payload.roomId, x: payload.x, z: payload.z, sit: payload.sit, sy: payload.sy, ry: payload.ry }); emit(); } });
       ch.on('broadcast', { event: 'e' }, ({ payload }) => onEvent(payload));
 
       let ready = false; let mine = null; let lastInfoKey = ''; let lastPosSent = 0; let posTimer = null;
@@ -190,7 +190,7 @@ export function createSupabaseBackend(url, anonKey) {
         clearTimeout(posTimer);
         if (!force && now - lastPosSent < 200) { posTimer = setTimeout(() => sendPos(true), 220); return; }
         lastPosSent = now;
-        ch.send({ type: 'broadcast', event: 'pos', payload: { userId: me.id, roomId: mine.roomId, x: mine.x, z: mine.z } });
+        ch.send({ type: 'broadcast', event: 'pos', payload: { userId: me.id, roomId: mine.roomId, x: mine.x, z: mine.z, sit: mine.sit, sy: mine.sy, ry: mine.ry } }); // sit/sy/ry: sitting, how high, which way I face
       }
       // SUBSCRIBED also fires after a reconnect (phone woke up, wifi came back): announce myself again.
       ch.subscribe((status) => { if (status === 'SUBSCRIBED') { ready = true; lastInfoKey = ''; trackInfo(); sendPos(true); } });

@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, a friend can visit an opened house as a guest, and the in-game guide (Pip) greets a new player, can be skipped and reopened.
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, a friend can visit an opened house as a guest, the in-game guide (Pip) greets a new player, can be skipped and reopened, and a player can sit on a seat while the other player sees it.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -105,6 +105,20 @@ try {
   log('chat');
   await b.evaluate(() => window.__ourplace.use('chat.send')('hello from B'));
   await a.waitForTimeout(800);
+
+  log('sit on a seat and the other player sees it');
+  const seatId = await a.evaluate(() => { // go to the first room (where B is too) and find its armchair
+    const o = window.__ourplace; const room = o.store.get().house.rooms[0];
+    o.bus.emit('room:goto', { roomId: room.id });
+    return room.items.find((i) => i.kind === 'armchair')?.id;
+  });
+  if (!seatId) throw new Error('The first room has no armchair to sit on');
+  await a.waitForTimeout(800);
+  await a.evaluate((id) => window.__ourplace.use('world.sitOn')(id), seatId);
+  await a.waitForFunction(() => window.__ourplace.use('world.isSitting')(), null, { timeout: 40000 });
+  await b.waitForFunction(() => window.__ourplace.store.get().players.some((p) => p.sit), null, { timeout: 15000 });
+  await a.evaluate(() => window.__ourplace.use('world.standUp')());
+  await b.waitForFunction(() => window.__ourplace.store.get().players.every((p) => !p.sit), null, { timeout: 15000 });
 
   log('Connect Four move syncs');
   const key = 'smoke:c4';
