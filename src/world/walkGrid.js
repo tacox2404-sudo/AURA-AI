@@ -147,5 +147,11 @@ export function makeWalkGrid(room, footprint, itemDef) {
     return cellCenter(free[0].x, free[0].z);
   }
 
-  return { isFreeAt, pathToPoint, pathToItem, nearestFree };
+  /** Path to stand exactly on one floor cell (used for doors). */
+  function pathToCell(from, cell) {
+    if (isBlockedCell(cell.x, cell.z)) return findPath(from, freeCellsAround([cell]));
+    return findPath(from, [cell], cellCenter(cell.x, cell.z));
+  }
+
+  return { isFreeAt, pathToPoint, pathToItem, pathToCell, nearestFree, isBlockedCell, cellCenter, size: [w, d] };
 }

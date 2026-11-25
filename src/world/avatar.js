@@ -101,15 +101,65 @@ export function setSitting(av, on) {
   }
 }
 
-/** Walk cycle: call every frame with moving=true/false. */
-export function animateAvatar(av, dt, moving) {
+/** Start a short emote animation ('wave', 'dance', 'jump', 'heart', 'laugh', 'sleep', 'cheer').
+ *  animateAvatar() plays it for EMOTE_TIME seconds, then the avatar goes back to normal. */
+export const EMOTE_TIME = 2.6;
+export function playEmote(av, name) {
+  av.userData.emote = { name, t: 0 };
+}
+
+/** Walk cycle: call every frame with moving=true/false (and run=true for a faster stride). */
+export function animateAvatar(av, dt, moving, run = false) {
   const u = av.userData;
-  if (u.sitting) { u.phase += dt * 2; u.body.position.y = Math.sin(u.phase) * 0.008; return; } // just a gentle breathing
-  u.phase += dt * (moving ? 10 : 2);
-  const swing = moving ? Math.sin(u.phase) * 0.6 : 0;
+  // reset the bits an emote may have changed
+  u.head.rotation.set(0, 0, 0); u.body.rotation.set(0, 0, 0);
+  u.armL.rotation.z = 0; u.armR.rotation.z = 0;
+  av.position.y = 0;
+  if (u.emote) {
+    u.emote.t += dt;
+    if (u.emote.t > EMOTE_TIME || moving) u.emote = null;
+  }
+  if (u.sitting) {
+    u.phase += dt * 2; u.body.position.y = Math.sin(u.phase) * 0.008; // just a gentle breathing
+    if (u.emote) playPose(u, u.emote, true); else { u.armL.rotation.x = -0.4; u.armR.rotation.x = -0.4; }
+    return;
+  }
+  u.phase += dt * (moving ? (run ? 15 : 10) : 2);
+  const swing = moving ? Math.sin(u.phase) * (run ? 0.85 : 0.6) : 0;
   u.legL.rotation.x = swing; u.legR.rotation.x = -swing;
   u.armL.rotation.x = -swing; u.armR.rotation.x = swing;
-  u.body.position.y = moving ? Math.abs(Math.sin(u.phase)) * 0.06 : Math.sin(u.phase) * 0.01;
+  u.body.position.y = moving ? Math.abs(Math.sin(u.phase)) * (run ? 0.1 : 0.06) : Math.sin(u.phase) * 0.01;
+  if (moving) u.body.rotation.x = run ? 0.12 : 0.04; // lean forward a little when walking
+  else u.head.rotation.y = Math.sin(u.phase * 0.23) * 0.15; // idle: look around slowly
+  if (u.emote) playPose(u, u.emote, false);
+}
+
+// lift the whole avatar (body + legs) off the floor, for jumping
+const av_lift = (u, y) => { u.body.parent.position.y = y; };
+
+// The pose of each emote at time e.t (seconds). Arms rotate around the shoulder:
+// rotation.x = forward/back, rotation.z = out to the side (arm up = +-PI).
+function playPose(u, e, sitting) {
+  const t = e.t, wob = Math.sin(t * 14);
+  switch (e.name) {
+    case 'wave': u.armR.rotation.z = 2.6; u.armR.rotation.x = 0; u.armR.rotation.z += wob * 0.35; u.head.rotation.z = -0.1; break;
+    case 'cheer': u.armL.rotation.z = -2.7; u.armR.rotation.z = 2.7; u.armL.rotation.x = u.armR.rotation.x = 0;
+      if (!sitting) u.body.position.y = Math.abs(Math.sin(t * 8)) * 0.18; break;
+    case 'heart': // arms up and curved over the head = a heart shape
+      u.armL.rotation.z = -2.4; u.armR.rotation.z = 2.4; u.armL.rotation.x = u.armR.rotation.x = -0.5;
+      u.head.rotation.z = Math.sin(t * 4) * 0.12; break;
+    case 'laugh': u.body.rotation.x = -0.15 + Math.abs(wob) * 0.08; u.head.rotation.x = -0.25;
+      u.armL.rotation.x = u.armR.rotation.x = -0.9; break;
+    case 'sleep': u.head.rotation.z = 0.35; u.head.rotation.x = 0.25; u.armL.rotation.x = u.armR.rotation.x = -0.2; break;
+    case 'jump': if (!sitting) { const k = (t * 2.2) % 1; av_lift(u, Math.sin(k * Math.PI) * 0.55); u.legL.rotation.x = u.legR.rotation.x = 0.3; }
+      u.armL.rotation.z = -2.2; u.armR.rotation.z = 2.2; break;
+    case 'dance': {
+      if (!sitting) { u.body.rotation.y = Math.sin(t * 6) * 0.5; u.legL.rotation.x = Math.max(0, Math.sin(t * 12)) * 0.6; u.legR.rotation.x = Math.max(0, -Math.sin(t * 12)) * 0.6;
+        u.body.position.y = Math.abs(Math.sin(t * 12)) * 0.08; }
+      u.armL.rotation.z = -1.6 - Math.sin(t * 12) * 0.6; u.armR.rotation.z = 1.6 - Math.sin(t * 12) * 0.6; u.armL.rotation.x = u.armR.rotation.x = 0;
+      u.head.rotation.z = Math.sin(t * 6) * 0.2; break;
+    }
+  }
 }
 
 /** Floating name tag. */

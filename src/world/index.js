@@ -1,12 +1,23 @@
 // WORLD AREA - entry point. Owner: World.
 // The 3D scene: room rendering, camera, my avatar, other players, tapping and walking.
 // Furniture meshes come from the Building area through ctx.use('build.itemMesh').
+//
+// How you move (phone first):
+//   tap the floor = walk there        double-tap = run there      press and hold = walk after your finger
+//   tap furniture = walk up and use it    tap a seat = sit    tap a friend = go say hi (you wave)
+//   tap a door = walk into that room      tap the pet = pet it    pinch / mouse wheel = zoom
+//   keyboard: WASD / arrows walk (Shift runs), Q / E turn the camera, 1-7 emotes
+// Extra pieces live in their own files: doors.js, daylight.js (windows + time of day), pet.js, emotes.js.
 
 import * as THREE from 'three';
-import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance } from './avatar.js';
+import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance, playEmote } from './avatar.js';
 import { isSeat, seatSlots } from './seats.js';
 import { initWardrobe } from './wardrobe.js';
 import { makeWalkGrid } from './walkGrid.js';
+import { buildDoors, updateDoors } from './doors.js';
+import { buildDaylight, updateWindows, lightAt } from './daylight.js';
+import { createPet } from './pet.js';
+import { initEmotes } from './emotes.js';
 import { currentRoom } from '../core/store.js';
 
 export function initWorld(ctx) {
@@ -24,7 +35,8 @@ export function initWorld(ctx) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#cfe8ff');
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
-  scene.add(new THREE.HemisphereLight('#ffffff', '#b9a48a', 1.4));
+  const hemi = new THREE.HemisphereLight('#ffffff', '#b9a48a', 1.4);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff3df', 1.6);
   sun.position.set(6, 12, 8); sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -44,6 +56,10 @@ export function initWorld(ctx) {
   let bounds = { w: 8, d: 8 };
   let walk = null; // walk grid: where furniture is, and paths around it (walkGrid.js)
   let walls = [];  // { group, out: [x, z] } - the side of the room each wall is on
+  let doors = [];  // doors to the other rooms (doors.js)
+  let doorTargets = []; // meshes you can tap to use a door
+  let daylight = null;  // windows + night lights (daylight.js)
+  let windows = [];
 
   const cellToWorld = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
   const worldToCell = (p) => ({ x: Math.floor(p.x + bounds.w / 2), z: Math.floor(p.z + bounds.d / 2) });
@@ -54,7 +70,6 @@ export function initWorld(ctx) {
     roomGroup = new THREE.Group(); roomRef = room;
     const [w, d] = room.size; bounds = { w, d };
     const t = room.theme;
-    scene.background = new THREE.Color(t.wall).lerp(new THREE.Color('#9fc9ff'), 0.55);
     // floor: checker tiles
     const cv = document.createElement('canvas'); cv.width = w * 32; cv.height = d * 32;
     const g = cv.getContext('2d');
@@ -81,6 +96,12 @@ export function initWorld(ctx) {
     addWall([-1, 0], d, -w / 2 - 0.1, 0, false);       // left
     addWall([1, 0], d, w / 2 + 0.1, 0, false);         // right
     walk = makeWalkGrid(room, ctx.use('build.footprint'), ctx.use('build.itemDef'));
+    // doors to the other rooms, then windows + lamps that glow at night
+    const dr = buildDoors(room, store.get().house, walk);
+    doors = dr.doors; doorTargets = dr.tapTargets; roomGroup.add(dr.group);
+    daylight = buildDaylight(room, walk, doors.map((x) => x.cell), cellToWorld, ctx.use('build.footprint'));
+    windows = daylight.windows; roomGroup.add(daylight.group);
+    applyDaylight(true);
     // items
     for (const item of room.items) {
       const mesh = ctx.use('build.itemMesh')(item, t);
@@ -104,9 +125,30 @@ export function initWorld(ctx) {
     syncRemotes();
   }
 
+  // ---------- time of day ----------
+  // ?hour=21 in the address bar shows the room at 9 pm (handy for testing).
+  const forcedHour = Number(new URLSearchParams(location.search).get('hour'));
+  let lastLight = null; let lightCheck = 0;
+  function applyDaylight(force) {
+    const d = new Date();
+    const hour = Number.isFinite(forcedHour) && new URLSearchParams(location.search).has('hour') ? forcedHour : d.getHours() + d.getMinutes() / 60;
+    const light = lightAt(hour);
+    lastLight = light;
+    hemi.intensity = light.hemi; sun.intensity = light.sunI; sun.color.copy(light.sun);
+    const wallCol = new THREE.Color(roomRef?.theme?.wall || '#f4efe6');
+    scene.background = wallCol.lerp(light.sky, 0.6);
+    daylight?.update(light);
+    if (force) lightCheck = 0;
+  }
+
   // ---------- my avatar ----------
   // path = list of {x, z} points still to walk through (from the walk grid)
-  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set(), sit: null, pendingSit: null };
+  // run: this walk is a run (double-tap / Shift). faceAt: turn to look at this spot when I stop.
+  // pendingDoor / pendingFriend: what to do when I arrive. transit: walking through a door right now.
+  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set(), sit: null, pendingSit: null,
+    run: false, faceAt: null, pendingDoor: null, pendingFriend: null, transit: null };
+  let arrivingFrom = null; // the room I just came from through a door: spawn at its door
+  const clearPlans = () => { me.pendingSit = null; me.pendingDoor = null; me.pendingFriend = null; me.faceAt = null; };
   scene.add(me.holder);
   function rebuildMyAvatar() {
     const s = store.get();
@@ -117,12 +159,22 @@ export function initWorld(ctx) {
   }
   function spawn() {
     if (me.sit) { me.sit = null; if (me.av) setSitting(me.av, false); me.holder.position.y = 0; }
-    me.pendingSit = null;
-    me.pos.set((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
-    const free = walk ? walk.nearestFree(me.pos.x, me.pos.z) : me.pos; // never spawn inside furniture
-    me.pos.set(free.x, 0, free.z);
+    clearPlans(); me.transit = null;
+    const back = arrivingFrom && doors.find((x) => x.toRoomId === arrivingFrom);
+    arrivingFrom = null;
+    if (back) {
+      // came through a door: stand just inside the door that leads back, which swings shut behind me
+      me.pos.set(back.spot.x, 0, back.spot.z);
+      me.holder.rotation.y = back.ry;
+      back.open = 1; back.openTarget = 0;
+    } else {
+      me.pos.set((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
+      const free = walk ? walk.nearestFree(me.pos.x, me.pos.z) : me.pos; // never spawn inside furniture
+      me.pos.set(free.x, 0, free.z);
+    }
     me.path = [];
     me.holder.position.copy(me.pos);
+    pet.place(walk, me.pos);
     sendPresence(true);
   }
 
@@ -198,20 +250,46 @@ export function initWorld(ctx) {
   const fingerGap = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
   const cv = renderer.domElement;
 
+  // Press and hold (one finger, in play mode) = "walk after my finger" until you let go.
+  let holdTimer = null; let holding = false; let holdPoint = null; let holdRepath = 0;
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  function floorPointAt(clientX, clientY) {
+    const rect = cv.getBoundingClientRect();
+    ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const p = new THREE.Vector3();
+    return ray.ray.intersectPlane(floorPlane, p) ? clampToRoom(p) : null;
+  }
+  const stopHold = () => { clearTimeout(holdTimer); holdTimer = null; holding = false; };
+
   cv.addEventListener('pointerdown', (e) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 1) { down = { x: e.clientX, y: e.clientY }; gesture = false; }
-    if (pointers.size === 2) { gesture = true; pinch0 = { d: fingerGap(), z: zoom }; }
+    if (pointers.size === 1) {
+      down = { x: e.clientX, y: e.clientY }; gesture = false;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        if (pointers.size !== 1 || gesture || store.get().mode !== 'play' || ui.isPanelOpen() || me.transit) return;
+        const pt = [...pointers.values()][0];
+        holding = true; holdPoint = floorPointAt(pt.x, pt.y); holdRepath = 0;
+        clearPlans(); standUp(); me.run = false;
+      }, 320);
+    }
+    if (pointers.size === 2) { gesture = true; pinch0 = { d: fingerGap(), z: zoom }; stopHold(); }
   });
   cv.addEventListener('pointermove', (e) => {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch0 && pointers.size >= 2) zoom = clampZoom(pinch0.z * pinch0.d / fingerGap());
+    if (holding) holdPoint = floorPointAt(e.clientX, e.clientY) || holdPoint;
+    // moved a lot before the hold started: it's a drag, not a hold
+    else if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) { clearTimeout(holdTimer); holdTimer = null; }
   });
   const lift = (e) => {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch0 = null;
-    const wasTap = e.type === 'pointerup' && down && !gesture && pointers.size === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12;
+    const wasHold = holding;
+    if (pointers.size === 0) stopHold();
+    const wasTap = !wasHold && e.type === 'pointerup' && down && !gesture && pointers.size === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12;
     if (pointers.size === 0) down = null;
     if (wasTap) handleTap(e);
   };
@@ -219,22 +297,46 @@ export function initWorld(ctx) {
   cv.addEventListener('pointercancel', lift);
   cv.addEventListener('wheel', (e) => { zoom = clampZoom(zoom + e.deltaY * 0.001); e.preventDefault(); }, { passive: false });
 
+  let lastFloorTap = { t: 0, x: 0, y: 0 }; // for double-tap = run
   function handleTap(e) {
     const rect = cv.getBoundingClientRect();
     ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const room = currentRoom(store.get());
     if (!room) return;
+    const playing = store.get().mode === 'play';
+    if (me.transit) return; // already walking through a door
+
+    if (playing) {
+      // 1. the pet
+      const petHit = pet.mesh && ray.intersectObject(pet.mesh, true)[0];
+      // 2. a friend's avatar
+      const friendHits = ray.intersectObjects([...remotes.values()].map((r) => r.av), true);
+      // 3. a door, its mat or its sign
+      const doorHit = ray.intersectObjects(doorTargets, true).find((hit) => hit.object.visible && hit.object.userData.doorTo && isShown(hit.object));
+      const nearest = [petHit && { kind: 'pet', d: petHit.distance }, friendHits[0] && { kind: 'friend', d: friendHits[0].distance, hit: friendHits[0] },
+        doorHit && { kind: 'door', d: doorHit.distance - 0.5, hit: doorHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+      if (nearest?.kind === 'pet') { tapPet(); return; }
+      if (nearest?.kind === 'door') { goToDoor(doors.find((x) => x.toRoomId === nearest.hit.object.userData.doorTo)); return; }
+      if (nearest?.kind === 'friend') {
+        const id = [...remotes.entries()].find(([, r]) => isInside(nearest.hit.object, r.av))?.[0];
+        if (id) { goToFriend(id); return; }
+      }
+    }
+
     const hitItem = ray.intersectObjects(itemMeshes, true)[0];
     if (hitItem) {
       const item = room.items.find((i) => i.id === hitItem.object.userData.itemId);
       const cell = worldToCell(hitItem.point);
       bus.emit('world:tap', { target: 'item', item, cell, room });
-      if (store.get().mode === 'play' && item) {
+      if (playing && item) {
         const def = ctx.use('build.itemDef')(item.kind);
         if (isSeat(def)) { trySit(item, hitItem.point); return; } // sofas, chairs...: walk over and sit
-        standUp();
+        standUp(); clearPlans(); me.run = false;
         if (walk) me.path = walk.pathToItem(me.pos, item) || []; // walk up next to it
+        const [fw, fd] = ctx.use('build.footprint')(item) || [1, 1];
+        me.faceAt = cellToWorld(item.x, item.z, fw, fd); // and turn to look at it
+        bounceItem(item.id);
         bus.emit('item:activate', { item, room });
       }
       return;
@@ -243,9 +345,71 @@ export function initWorld(ctx) {
     if (hitFloor) {
       const cell = worldToCell(hitFloor.point);
       bus.emit('world:tap', { target: 'floor', cell, room });
-      if (store.get().mode === 'play' && walk) { standUp(); me.pendingSit = null; me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || []; }
+      if (playing && walk) {
+        const now = performance.now();
+        const dbl = now - lastFloorTap.t < 350 && Math.hypot(e.clientX - lastFloorTap.x, e.clientY - lastFloorTap.y) < 40;
+        lastFloorTap = { t: dbl ? 0 : now, x: e.clientX, y: e.clientY };
+        standUp(); clearPlans();
+        me.run = dbl; // double-tap = run
+        me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || [];
+        if (me.path.length) showMarker(me.path[me.path.length - 1], dbl);
+      }
     }
   }
+  const isInside = (obj, root) => { for (let o = obj; o; o = o.parent) if (o === root) return true; return false; };
+  const isShown = (obj) => { for (let o = obj; o; o = o.parent) if (!o.visible) return false; return true; };
+
+  // A ring on the floor where you're walking to (orange when running).
+  const marker = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.28, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false }));
+  marker.rotation.x = -Math.PI / 2; marker.position.y = 0.03; marker.renderOrder = 2; scene.add(marker);
+  let markerT = 1;
+  function showMarker(p, run) { marker.position.set(p.x, 0.03, p.z); marker.material.color.set(run ? '#ffb35c' : '#ffffff'); markerT = 0; }
+
+  // A tapped piece of furniture does a little bounce, so you see what you tapped.
+  const bounces = new Map(); // itemId -> seconds left
+  const bounceItem = (id) => bounces.set(id, 0.35);
+
+  // ---------- doors ----------
+  function goToDoor(door) {
+    if (!door) return;
+    standUp(); clearPlans(); me.run = false;
+    me.pendingDoor = door;
+    me.path = walk ? walk.pathToCell(me.pos, door.cell) || [] : [];
+    if (me.path.length) showMarker(me.path[me.path.length - 1], false);
+  }
+  // At the door: it swings open, I step through, the screen fades and the next room appears.
+  function startTransit(door) {
+    me.pendingDoor = null; me.path = [];
+    door.openTarget = 1;
+    me.transit = { door, t: 0, switched: false };
+  }
+  const fade = ui.h('div', { style: { position: 'absolute', inset: '0', background: '#fff8ef', opacity: '0', pointerEvents: 'none', transition: 'opacity .25s' } });
+  host.append(fade);
+  /** Service + robot test: walk to the door of a room and go through it. Returns false if there is no such door. */
+  ctx.provide('world.goToRoom', (roomId) => { const d = doors.find((x) => x.toRoomId === roomId); if (!d) return false; goToDoor(d); return true; });
+
+  // ---------- friends ----------
+  // Tap a friend: walk up to them, turn to face them and wave.
+  function goToFriend(userId) {
+    const r = remotes.get(userId); if (!r || !walk) return;
+    standUp(); clearPlans(); me.run = false;
+    const p = r.holder.position;
+    const dx = me.pos.x - p.x, dz = me.pos.z - p.z, len = Math.hypot(dx, dz) || 1;
+    const spot = walk.nearestFree(p.x + dx / len * 0.9, p.z + dz / len * 0.9);
+    me.path = walk.pathToPoint(me.pos, spot) || [];
+    me.pendingFriend = userId;
+  }
+
+  // ---------- pet ----------
+  const pet = createPet(scene);
+  let lastPetPoints = 0;
+  function tapPet() {
+    const info = pet.pet(); if (!info) return;
+    ui.toast(info.kind === 'cat' ? `${info.name} purrs 💕` : `${info.name} wags happily 🐾`);
+    const now = Date.now();
+    if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${info.name}` }); }
+  }
+
   const clampToRoom = (p) => { p.x = Math.max(-bounds.w / 2 + 0.3, Math.min(bounds.w / 2 - 0.3, p.x)); p.z = Math.max(-bounds.d / 2 + 0.3, Math.min(bounds.d / 2 - 0.3, p.z)); return p; };
 
   // keyboard (desktop): WASD / arrows to walk, Q / E to turn the camera
@@ -280,6 +444,12 @@ export function initWorld(ctx) {
   }, '⟳');
   host.append(rotateBtn);
 
+  // ---------- emotes ----------
+  const emotes = initEmotes(ctx, host, scene,
+    (userId) => (userId === store.get().me?.id ? { holder: me.holder, av: me.av } : remotes.get(userId)),
+    () => { me.path = []; clearPlans(); }); // stop walking to act it out (sitting is fine)
+  ctx.provide('world.emote', (id) => emotes.play(id));
+
   // Fit the camera so the whole room (floor + wall height) is on screen, for any screen
   // shape and any rotation. For each corner we check how far back the camera must be.
   const tmpR = new THREE.Vector3(), tmpU = new THREE.Vector3(), tmpP = new THREE.Vector3();
@@ -308,7 +478,7 @@ export function initWorld(ctx) {
     const free = slots.filter((sl) => !taken(sl));
     if (!free.length) return ui.toast(`${def?.name || 'That seat'} is taken 😄`);
     free.sort((a, b) => Math.hypot(a.x - point.x, a.z - point.z) - Math.hypot(b.x - point.x, b.z - point.z));
-    standUp();
+    standUp(); clearPlans(); me.run = false;
     me.pendingSit = { item, slot: free[0] };
     me.path = walk ? walk.pathToItem(me.pos, item) || [] : [];
   }
@@ -323,7 +493,7 @@ export function initWorld(ctx) {
     trySit(item, c);
     return true;
   });
-  ctx.provide('world.standUp', () => { me.pendingSit = null; standUp(); });
+  ctx.provide('world.standUp', () => { clearPlans(); standUp(); });
   ctx.provide('world.isSitting', () => !!me.sit);
   function startSit() {
     const { slot, item } = me.pendingSit; me.pendingSit = null;
@@ -368,30 +538,64 @@ export function initWorld(ctx) {
   const SPEED = 3.2;
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
-    // keyboard: W walks AWAY from the camera, whatever way the camera is turned
+    // keyboard: W walks AWAY from the camera, whatever way the camera is turned. Shift = run.
     const k = me.keys;
     const fwdKey = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
     const sideKey = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     let moving = false;
-    if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
+    if (me.transit) {
+      // walking through a door: step into the doorway, fade out, switch room
+      const tr = me.transit; tr.t += dt;
+      if (tr.t > 0.2) { me.pos.x += tr.door.out[0] * dt * 1.6; me.pos.z += tr.door.out[1] * dt * 1.6; moving = true; turnToward(me.holder, Math.atan2(tr.door.out[0], tr.door.out[1]), dt); }
+      if (tr.t > 0.25) fade.style.opacity = '1';
+      if (tr.t > 0.55 && !tr.switched) {
+        tr.switched = true;
+        arrivingFrom = roomRef?.id;
+        bus.emit('room:goto', { roomId: tr.door.toRoomId }); // spawn() puts me at the door back
+        setTimeout(() => { fade.style.opacity = '0'; }, 60);
+        me.transit = null;
+      }
+    } else if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
       const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); // forward on the floor
       const kv = new THREE.Vector3(fx * fwdKey - fz * sideKey, 0, fz * fwdKey + fx * sideKey).normalize();
-      me.path = []; me.pendingSit = null; standUp();
-      if (stepTo(me.pos.x + kv.x * SPEED * dt, me.pos.z + kv.z * SPEED * dt)) moving = true;
+      me.path = []; clearPlans(); standUp();
+      me.run = k.has('shift');
+      const sp = SPEED * (me.run ? 1.8 : 1);
+      if (stepTo(me.pos.x + kv.x * sp * dt, me.pos.z + kv.z * sp * dt)) moving = true;
       turnToward(me.holder, Math.atan2(kv.x, kv.z), dt);
-    } else if (me.path.length) {
-      // tap-to-walk: follow the path point by point
-      const next = me.path[0];
-      const dx = next.x - me.pos.x, dz = next.z - me.pos.z, len = Math.hypot(dx, dz);
-      const step = SPEED * dt;
-      if (len <= step) { me.pos.x = next.x; me.pos.z = next.z; me.path.shift(); }
-      else { me.pos.x += dx / len * step; me.pos.z += dz / len * step; }
-      if (len > 0.001) { turnToward(me.holder, Math.atan2(dx, dz), dt); moving = true; }
+    } else {
+      // press and hold: keep re-planning toward the finger
+      if (holding && holdPoint && walk) {
+        holdRepath -= dt;
+        if (holdRepath <= 0) { holdRepath = 0.15; me.path = walk.pathToPoint(me.pos, holdPoint) || []; }
+      }
+      if (me.path.length) {
+        // tap-to-walk: follow the path point by point
+        const next = me.path[0];
+        const dx = next.x - me.pos.x, dz = next.z - me.pos.z, len = Math.hypot(dx, dz);
+        const step = SPEED * (me.run ? 1.8 : 1) * dt;
+        if (len <= step) { me.pos.x = next.x; me.pos.z = next.z; me.path.shift(); }
+        else { me.pos.x += dx / len * step; me.pos.z += dz / len * step; }
+        if (len > 0.001) { turnToward(me.holder, Math.atan2(dx, dz), dt); moving = true; }
+      }
     }
-    if (me.pendingSit && !me.path.length && !moving) startSit();
+    if (!me.path.length && !moving && !me.transit) {
+      // arrived: do what I came for
+      if (me.pendingSit) startSit();
+      else if (me.pendingDoor) {
+        const dr = me.pendingDoor;
+        if (Math.hypot(me.pos.x - dr.spot.x, me.pos.z - dr.spot.z) < 1.2 || !walk?.pathToCell(me.pos, dr.cell)) startTransit(dr);
+        else me.pendingDoor = null;
+      } else if (me.pendingFriend) {
+        const r = remotes.get(me.pendingFriend); me.pendingFriend = null;
+        if (r) { me.faceAt = r.holder.position.clone(); emotes.play('wave'); }
+      }
+      if (me.faceAt && !me.sit) turnToward(me.holder, Math.atan2(me.faceAt.x - me.pos.x, me.faceAt.z - me.pos.z), dt);
+      if (!holding) me.run = false;
+    }
     me.holder.position.copy(me.pos);
     if (me.sit) me.holder.position.y = me.sit.y;
-    if (me.av) animateAvatar(me.av, dt, moving);
+    if (me.av) animateAvatar(me.av, dt, moving, me.run);
     if (moving) sendPresence();
     else if (me.wasMoving) sendPresence(true);
     me.wasMoving = moving;
@@ -399,11 +603,26 @@ export function initWorld(ctx) {
     for (const r of remotes.values()) {
       setSitting(r.av, r.sit); // sitting or standing, as they told us
       const d = r.target.clone().sub(r.holder.position);
-      const mv = d.length() > 0.03;
-      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); if (!r.sit) r.holder.rotation.y = Math.atan2(d.x, d.z); }
+      const dist = d.length();
+      const mv = dist > 0.03;
+      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); if (!r.sit && dist > 0.05) turnToward(r.holder, Math.atan2(d.x, d.z), dt); }
       if (r.sit) turnToward(r.holder, r.ry, dt);
-      animateAvatar(r.av, dt, mv && !r.sit);
+      animateAvatar(r.av, dt, mv && !r.sit, dist > 0.6);
     }
+
+    // doors, tap marker, bouncing furniture, pet
+    updateDoors(doors, dt, camDir);
+    updateWindows(windows, camDir);
+    if (markerT < 1) { markerT = Math.min(1, markerT + dt * 1.4); marker.material.opacity = 0.9 * (1 - markerT); marker.scale.setScalar(1 + markerT * 0.8); }
+    for (const [id, left] of bounces) {
+      const mesh = itemMeshes.find((x) => x.userData.itemId === id);
+      const t = Math.max(0, left - dt); bounces.set(id, t);
+      if (mesh) mesh.scale.setScalar(1 + Math.sin((t / 0.35) * Math.PI) * 0.06);
+      if (!t) bounces.delete(id);
+    }
+    pet.update(dt, { me: { x: me.pos.x, z: me.pos.z, sitting: !!me.sit }, walk, night: lastLight?.night || 0 });
+    lightCheck -= dt;
+    if (lightCheck <= 0) { lightCheck = 30; applyDaylight(); } // the light follows the clock
 
     // camera: smooth turn toward the chosen angle, then fit the room on screen.
     camYaw += (camYawTarget - camYaw) * Math.min(1, dt * 7);
@@ -422,6 +641,7 @@ export function initWorld(ctx) {
   // ---------- react to state ----------
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
+    if (s.house !== prev.house) pet.setHouse(s.house); // before the room, so spawn() can place the pet
     const room = currentRoom(s);
     if (room && (room !== roomRef)) {
       const changedRoom = !roomRef || room.id !== roomRef.id;
@@ -430,9 +650,10 @@ export function initWorld(ctx) {
     }
     if (!room && roomGroup) { scene.remove(roomGroup); roomGroup = null; roomRef = null; }
     if (s.players !== prev.players) syncRemotes();
-    if (s.mode === 'build' && prev.mode !== 'build') { me.pendingSit = null; standUp(); } // building: get off the sofa
+    if (s.mode === 'build' && prev.mode !== 'build') { clearPlans(); standUp(); emotes.close(); } // building: get off the sofa
     if (grid && s.mode !== prev.mode) grid.visible = s.mode === 'build';
     rotateBtn.style.display = s.house ? 'block' : 'none';
+    emotes.button.style.display = s.house && s.mode !== 'build' ? 'block' : 'none';
   });
 
   bus.on('room:goto', ({ roomId }) => { store.set({ roomId }); });
