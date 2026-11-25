@@ -159,3 +159,54 @@ grant execute on all functions in schema public to authenticated;
 -- A harmless function the weekly keep-alive workflow calls so the free project never pauses.
 create or replace function ping() returns int language sql stable as $$ select 1 $$;
 grant execute on function ping() to anon, authenticated;
+
+-- ---------- member roles ----------
+-- Change a member's role. Housemates may promote guests; only the owner may demote a housemate.
+-- The owner's role never changes.
+create or replace function set_member_role(p_house uuid, p_user uuid, p_role text)
+returns void language plpgsql security definer set search_path = public as $$
+declare me text; target text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if p_role not in ('housemate', 'guest') then raise exception 'Role must be housemate or guest'; end if;
+  select role into me from house_members where house_id = p_house and user_id = auth.uid();
+  select role into target from house_members where house_id = p_house and user_id = p_user;
+  if me is null or me = 'guest' then raise exception 'Only housemates can change roles'; end if;
+  if target is null then raise exception 'That person is not in this house'; end if;
+  if target = 'owner' then raise exception 'The owner''s role cannot be changed'; end if;
+  if target = 'housemate' and p_role = 'guest' and me <> 'owner' then raise exception 'Only the owner can make a housemate a guest'; end if;
+  update house_members set role = p_role where house_id = p_house and user_id = p_user;
+end; $$;
+
+-- Remove someone from the house. Housemates may remove guests; only the owner may remove housemates.
+create or replace function remove_member(p_house uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare me text; target text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if p_user = auth.uid() then raise exception 'Use "Leave house" to leave yourself'; end if;
+  select role into me from house_members where house_id = p_house and user_id = auth.uid();
+  select role into target from house_members where house_id = p_house and user_id = p_user;
+  if me is null or me = 'guest' then raise exception 'Only housemates can remove people'; end if;
+  if target is null then raise exception 'That person is not in this house'; end if;
+  if target = 'owner' then raise exception 'The owner cannot be removed'; end if;
+  if target = 'housemate' and me <> 'owner' then raise exception 'Only the owner can remove a housemate'; end if;
+  delete from house_members where house_id = p_house and user_id = p_user;
+end; $$;
+
+-- Leave a house. The last owner cannot leave (the house would have nobody in charge).
+create or replace function leave_house(p_house uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare me text; other_owners int;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select role into me from house_members where house_id = p_house and user_id = auth.uid();
+  if me is null then raise exception 'You are not in this house'; end if;
+  if me = 'owner' then
+    select count(*) into other_owners from house_members where house_id = p_house and role = 'owner' and user_id <> auth.uid();
+    if other_owners = 0 then raise exception 'The owner cannot leave their own house'; end if;
+  end if;
+  delete from house_members where house_id = p_house and user_id = auth.uid();
+end; $$;
+
+grant execute on function set_member_role(uuid, uuid, text), remove_member(uuid, uuid), leave_house(uuid) to authenticated;
