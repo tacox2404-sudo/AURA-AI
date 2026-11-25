@@ -4,10 +4,11 @@
 //
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
-// chat, and a Connect Four move syncs between players.
+// chat, a Connect Four move syncs between players, and invite links give the right role
+// (housemate link -> housemate, guest link -> guest).
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -15,8 +16,14 @@ const errors = [];
 let step = '';
 const log = (s) => { step = s; console.log('•', s); };
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', shell: process.platform === 'win32' });
-await new Promise((r) => setTimeout(r, 2500));
+// Always test a DEMO copy of the game (Supabase keys blanked), so the robot can never
+// create accounts in the real database, even when .env.local exists.
+const demoEnv = { ...process.env, VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' };
+execSync('npx vite build --outDir dist-smoke --emptyOutDir', { stdio: 'ignore', env: demoEnv, shell: process.platform === 'win32' });
+const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-smoke', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', env: demoEnv, shell: process.platform === 'win32' });
+for (let i = 0; i < 40; i++) { // wait up to ~20s for the server
+  try { await fetch(URL); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
+}
 
 const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || undefined,
@@ -106,6 +113,22 @@ try {
   await b.waitForTimeout(500);
   const redOnB = await b.locator('.c4-cell i.red').count();
   if (redOnB !== 1) throw new Error(`B sees ${redOnB} red discs, expected 1`);
+
+  log('invite links give the right role');
+  const roleB = await b.evaluate(() => window.__ourplace.store.get().role);
+  if (roleB !== 'housemate') throw new Error(`Housemate link gave role "${roleB}"`);
+  const guestCode = await a.evaluate(() => window.__ourplace.store.get().house.guestCode);
+  await b.close(); // fewer 3D pages open at once keeps the robot fast
+  const c = await ctx.newPage(); watch(c, 'C');
+  await c.goto(URL); await c.waitForTimeout(400);
+  await c.evaluate(() => { localStorage.setItem('op:session', 'null'); localStorage.removeItem('op:lastHouse'); });
+  await c.goto(`${URL}?join=${guestCode}`); await c.waitForTimeout(500);
+  await signUp(c, 'tester_c');
+  await c.waitForTimeout(1500);
+  if (await c.locator('text=Save look').count()) await c.click('text=Save look');
+  await c.waitForTimeout(500);
+  const roleC = await c.evaluate(() => window.__ourplace.store.get().role);
+  if (roleC !== 'guest') throw new Error(`Guest link gave role "${roleC}"`);
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
