@@ -55,7 +55,7 @@ has its own saved state. Win records are under the key `records`.
 
 Live events between players are sent with `ctx.use('live.send')({ type, ...payload })`
 and arrive on every other device as `live:<type>`. Types in use: `house-updated`,
-`chat`, `state`, `points`, `draw`.
+`chat`, `state`, `points`, `draw`, `emote` (World: `{ userId, emote: 'wave' | 'dance' | 'cheer' | 'jump' | 'laugh' | 'sleep' | 'heart' }`).
 
 ## Services (`ctx.use(name)(...)`)
 
@@ -67,6 +67,8 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 | `build.makeHouse(answers)` | Building | starter house from onboarding answers |
 | `build.houseTypes()`, `build.vibes()` | Building | lists for onboarding |
 | `world.openWardrobe(firstTime)` | World | opens the wardrobe |
+| `world.goToRoom(roomId)` | World | walk to the door of that room and go through it (false if this room has no door to it). Every room has a door to each other room (up to 6), worked out from `house.rooms`, nothing is saved |
+| `world.emote(id)` | World | play an emote on my avatar and show it to everyone (`wave`, `dance`, `cheer`, `jump`, `laugh`, `sleep`, `heart`) |
 | `world.sitOn(itemId)`, `world.standUp()`, `world.isSitting()` | World | walk to a seat (sofa, chair...) in the current room and sit; stand up; am I sitting? Others see it through Presence `sit`/`sy`/`ry` |
 | `house.save(house)` | Social | saves + tells everyone to reload |
 | `live.presence(p)`, `live.send(e)` | Social | live connection |
