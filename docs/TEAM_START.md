@@ -2,7 +2,7 @@
 
 ## 1. Play it first (5 min, phone or laptop)
 
-Open **https://tacox2404-sudo.github.io/AURA-AI/**
+Open **https://play-aura.netlify.app**
 
 1. Create an account (any username + password).
 2. Create a house: pick a house type, a name, a vibe.

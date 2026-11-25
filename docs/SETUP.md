@@ -59,7 +59,15 @@ Labels and the Day 1 issues are already created. Still to do:
 2. Repo Settings → Secrets and variables → Actions → **Variables**: add
    `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the anon key is safe to be public;
    the database rules in `schema.sql` protect the data).
-3. Every merge to `main` now publishes to https://tacox2404-sudo.github.io/AURA-AI/.
+3. Every merge to `main` now publishes to https://tacox2404-sudo.github.io/AURA-AI/ (backup address).
+
+## 6. The main address: Netlify (https://play-aura.netlify.app)
+
+The game's main address is hosted on Netlify (free). It deploys by itself on every merge to `main`.
+- Project `play-aura` on app.netlify.com, linked to this repo, build `npm run build`, publish `dist`.
+- Its two variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set in Netlify (Project configuration, Environment variables) and must stay **not** marked secret, because they are built into the game.
+- The project must be **Public** (Netlify makes new projects private; use "Make public" once).
+- Invite links use whatever address the person is on, so they follow the new address automatically.
    Share that link with testers.
 
 ## Free-tier notes
