@@ -3,7 +3,9 @@
 // the service 'build.makeHouse' which uses this file.
 
 import { uid } from '../core/store.js';
-import { CATALOG_BY_ID } from './catalog.js';
+import { layoutItems } from './layout.js';
+
+export { layoutItems, arrangeRoom } from './layout.js';
 
 export const VIBES = {
   cozy:    { label: 'Cozy cabin',  floor: '#c8a27a', wall: '#f3e6d3', accent: '#c4553a', wood: '#8b5e3c' },
@@ -66,35 +68,4 @@ export function makeRoom({ name, vibe = 'cozy', theme = null, kinds = [], size =
   const w = size?.[0] || (n > 7 ? 10 : 8);
   const d = size?.[1] || (n > 7 ? 9 : 8);
   return { id: uid('r_'), name, vibe, theme: theme || { ...VIBES[vibe] || VIBES.cozy }, size: [w, d], items: layoutItems(kinds, w, d) };
-}
-
-/** Auto-layout: wall items along the back wall, the rest spread across the floor. */
-export function layoutItems(kinds, w, d) {
-  const occ = Array.from({ length: d }, () => Array(w).fill(false));
-  const fits = (x, z, sw, sd) => {
-    if (x < 0 || z < 0 || x + sw > w || z + sd > d) return false;
-    for (let i = x; i < x + sw; i++) for (let j = z; j < z + sd; j++) if (occ[j][i]) return false;
-    return true;
-  };
-  const take = (x, z, sw, sd) => { for (let i = x; i < x + sw; i++) for (let j = z; j < z + sd; j++) occ[j][i] = true; };
-  const items = [];
-  // keep a walkway: the front-centre cells stay free
-  const reserved = new Set([`${Math.floor(w / 2)},${d - 1}`, `${Math.floor(w / 2)},${d - 2}`]);
-  const ordered = [...kinds].sort((a, b) => (CATALOG_BY_ID[b]?.wall ? 1 : 0) - (CATALOG_BY_ID[a]?.wall ? 1 : 0));
-  for (const kind of ordered) {
-    const def = CATALOG_BY_ID[kind];
-    if (!def) continue;
-    const [sw, sd] = def.size;
-    const spots = [];
-    if (def.wall) { for (let x = 1; x < w - 1; x += 1) spots.push([x, 0]); }
-    if (def.floorOnly) spots.push([Math.floor(w / 2) - 1, Math.floor(d / 2) - 1]);
-    // spread the rest with a little breathing room
-    for (let z = 1; z < d - 1; z += 2) for (let x = 1; x < w - 1; x += 2) spots.push([x, z]);
-    for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) spots.push([x, z]);
-    const spot = spots.find(([x, z]) => fits(x, z, sw, sd) && !reserved.has(`${x},${z}`));
-    if (!spot) continue;
-    if (!def.floorOnly) take(spot[0], spot[1], sw, sd);
-    items.push({ id: uid('i_'), kind, x: spot[0], z: spot[1], rot: 0 });
-  }
-  return items;
 }
