@@ -110,7 +110,8 @@ export function initSocial(ctx) {
       reloadTimer = setTimeout(async () => {
         const s = store.get(); if (!s.house) return;
         const house = await backend.getHouse(s.house.id);
-        if (!house) return;
+        // someone removed me (or I left on another device): go back to the house list
+        if (!house || !house.members?.[s.me.id]) { ui.closePanel(); ui.toast('You are no longer in this house'); showPicker(); return; }
         const roomId = house.rooms.some((r) => r.id === s.roomId) ? s.roomId : house.rooms[0]?.id;
         store.set({ house, roomId, role: house.members?.[s.me.id]?.role || s.role });
       }, 150);
@@ -145,13 +146,57 @@ export function initSocial(ctx) {
           h('button', { onclick: () => copy(link) }, '🔗 Copy link'),
           navigator.share ? h('button', { onclick: () => navigator.share({ title: 'OurPlace', text: message }).catch(() => {}) }, '📤 Share') : null));
     };
+    // who may change whom (same rules as the backend): housemates handle guests, the owner handles housemates
+    const canManage = (m) => m.role !== 'owner' && (s.role === 'owner' || (s.role === 'housemate' && m.role === 'guest'));
+    const memberRow = ([id, m]) => h('div', { class: 'row' },
+      h('span', { class: 'dot' + (online.has(id) ? ' on' : '') }),
+      h('span', { class: 'row-main' }, m.name + (id === s.me.id ? ' (you)' : '')),
+      h('small', {}, m.role),
+      id !== s.me.id && canManage(m) ? h('span', { class: 'row-btns' },
+        m.role === 'guest'
+          ? h('button', { title: 'Make housemate', onclick: () => changeRole(id, m, 'housemate') }, '⬆️')
+          : h('button', { title: 'Make guest', onclick: () => changeRole(id, m, 'guest') }, '⬇️'),
+        h('button', { title: 'Remove from house', onclick: () => removePerson(id, m) }, '🚫')) : null);
     ui.panel({ title: '👥 People', body: h('div', {},
-      h('div', { class: 'list' }, ...Object.entries(s.house.members || {}).map(([id, m]) => h('div', { class: 'row' },
-        h('span', { class: 'dot' + (online.has(id) ? ' on' : '') }), h('span', { class: 'row-main' }, m.name + (id === s.me.id ? ' (you)' : '')), h('small', {}, m.role)))),
+      h('div', { class: 'list' }, ...Object.entries(s.house.members || {}).map(memberRow)),
       h('h4', {}, 'Invite people'),
       isEditor ? inviteBlock('Housemate code: can build and decorate', s.house.inviteCode, 'housemate') : null,
       inviteBlock('Guest code: can visit, chat and play', s.house.guestCode, 'guest'),
       backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: invites only work in this browser. Set up Supabase (docs/SETUP.md) to invite people on other phones.') : null) });
+  }
+  // Promote / demote / remove, with a confirm first. Then tell everyone else to reload.
+  async function afterMembersChanged(house, message) {
+    store.set({ house });
+    conn?.send({ type: 'house-updated' });
+    ui.toast(message);
+    openPeople(); // redraw the list
+  }
+  async function changeRole(id, m, role) {
+    const house = store.get().house;
+    const ok = await ui.confirm(role === 'housemate' ? `Make ${m.name} a housemate?` : `Make ${m.name} a guest?`,
+      role === 'housemate' ? 'They will be able to build and decorate.' : 'They will only be able to visit, chat and play.', 'Yes');
+    if (!ok) return;
+    try { await afterMembersChanged(await backend.setMemberRole(house.id, id, role), `${m.name} is now a ${role}`); }
+    catch (e) { ui.toast(friendly(e.message)); }
+  }
+  async function removePerson(id, m) {
+    const house = store.get().house;
+    const ok = await ui.confirm(`Remove ${m.name}?`, 'They will lose access to this house. They can rejoin with a code.', 'Remove');
+    if (!ok) return;
+    try { await afterMembersChanged(await backend.removeMember(house.id, id), `${m.name} was removed`); }
+    catch (e) { ui.toast(friendly(e.message)); }
+  }
+  async function quitHouse() {
+    const s = store.get();
+    const ok = await ui.confirm(`Leave ${s.house.name}?`, 'You will lose access until someone invites you again.', 'Leave');
+    if (!ok) return;
+    try {
+      await backend.leaveHouse(s.house.id);
+      conn?.send({ type: 'house-updated' }); // others reload and see you are gone
+      safeSet('op:lastHouse', '');
+      ui.closePanel(); ui.toast(`You left ${s.house.name}`);
+      showPicker();
+    } catch (e) { ui.toast(friendly(e.message)); }
   }
   async function copy(text) {
     try { await navigator.clipboard.writeText(text); ui.toast('Copied!'); }
@@ -167,6 +212,7 @@ export function initSocial(ctx) {
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); showPicker(); } }, '🏘️ Switch or create house'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); openPeople(); } }, '👥 Invite people'),
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); ctx.use('world.openWardrobe')(false); } }, '👕 Wardrobe'),
+      s.role !== 'owner' ? h('button', { class: 'row-main', onclick: () => { ui.closePanel(); quitHouse(); } }, '👋 Leave this house') : null,
       h('button', { class: 'row-main', onclick: () => { ui.closePanel(); signOut(); } }, '🚪 Log out'),
       h('p', { class: 'muted small' }, `Signed in as ${s.me?.username} · ${backend.mode === 'demo' ? 'Demo mode (this browser only)' : 'Online'}`)) });
   });
