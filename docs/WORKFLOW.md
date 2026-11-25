@@ -19,8 +19,16 @@ npm run start -- <area>/<short-task>   # e.g. world/walk-animation: syncs main, 
 npm run ship                           # build + scope + smoke, LOG line check, push, open the PR
 ```
 
-Then message the Game Director the PR link. The Director checks the PR, tries it, and
-merges it into `main`; the live game updates automatically. Next task: `npm run start` again.
+`npm run ship` also turns on **auto-merge**: when the 3 checks pass, your PR merges into `main` by itself and the
+live game updates. You do not wait for anyone. Follow it with:
+
+```bash
+npm run status     # ⏳ running / ✅ merged / ❌ failed (with a link to what failed)
+```
+
+Red check? Fix it on your branch, commit, `npm run ship` again. When status says MERGED you are done; share the PR link
+in the team chat and start the next task with `npm run start` again. The Director still looks at what lands
+and can revert anything, but never blocks you.
 
 ## Rules that keep us fast
 
@@ -35,7 +43,7 @@ merges it into `main`; the live game updates automatically. Next task: `npm run 
 5. **Demo mode and phones always work.** Test with `npm run dev` on a 390px-wide screen.
 6. **Read other teams' work** with `git pull` (merged) or `git fetch` + `git checkout <their-branch>`
    (in progress; look, don't edit). Full list of branches: GitHub -> Branches.
-7. **Red check = fix it on your branch** and run `npm run ship` again. Don't ask for a merge on red.
+7. **Red check = fix it on your branch** and run `npm run ship` again. Don't ask for a merge on red (auto-merge only merges green PRs).
 8. **Update the log.** 2-4 lines in `docs/LOG.md` per PR (the ship command checks).
 
 ## If you're stuck

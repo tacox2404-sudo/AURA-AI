@@ -33,7 +33,7 @@ I own **Social**: login, onboarding, houses, invites and roles, chat, nudges, wh
 1. Start: `npm run start -- social/<short-task>` (syncs main and makes the branch; the `social/` prefix is required).
 3. Build the rough version first, make it work end to end, then polish. It must work on a phone screen AND in demo mode (no Supabase).
 4. After each change, tell me exactly what to tap to test it.
-5. Add 2-4 lines to docs/LOG.md, commit, then run `npm run ship` (build + scope + smoke, push, opens the pull request). Fix anything red and run it again.
+5. Add 2-4 lines to docs/LOG.md, commit, then run `npm run ship` (build + scope + smoke, push, opens the pull request and turns on auto-merge). Then run `npm run status` every minute or two until it says MERGED; if a check fails, fix it and run `npm run ship` again. You never wait for the Game Director.
 6. Read docs/WORKFLOW.md first: it is mandatory. Give me the PR link and a one-line message for the team chat.
 
 When I start a new chat later, I'll say "continue Social". You'll re-read CLAUDE.md and docs/LOG.md, pull main, and suggest the next goal.

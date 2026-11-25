@@ -35,4 +35,9 @@ if (hasGh) {
 } else {
   console.log(`\nOpen your pull request here:\nhttps://github.com/${TEAM}/compare/main...${branch}?expand=1`);
 }
-console.log('\n✅ Shipped. Fill in the PR description, then tell the Game Director the PR link.');
+// Merge by itself when the checks are green, so nobody has to wait for the Game Director.
+if (hasGh) {
+  try { show(`gh pr merge ${branch} --auto --squash --repo ${TEAM}`); console.log('Auto-merge is ON: it merges by itself when the checks pass.'); }
+  catch { console.log('(Could not turn on auto-merge. Ask the Game Director, or click "Enable auto-merge" on the pull request.)'); }
+}
+console.log('\n✅ Shipped. Next: run `npm run status` in a minute or two. It tells you if the checks passed and whether it merged.\nIf a check FAILS, fix it on your branch and run `npm run ship` again. You do not need to wait for anyone.');

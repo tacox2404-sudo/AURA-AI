@@ -48,8 +48,13 @@ into `main` (a GitHub ruleset enforces it: pull request + green checks, no force
    fixes a fork remote, pulls the latest `main` and creates your branch. Never edit on `main`.
 2. **Build** the feature inside your area's folder, explain it in plain words, test with `npm run dev`.
 3. **Finish:** add 2-4 lines to `docs/LOG.md`, commit, then `npm run ship`. It runs build, scope and
-   smoke, pushes your branch and opens the pull request. Give the user the PR link and a one-line
-   message for the team chat.
+   smoke, pushes your branch, opens the pull request and turns on auto-merge. Give the user the PR link
+   and a one-line message for the team chat.
+3b. **Then follow it to the end yourself:** run `npm run status` (no login needed) every minute or two.
+   It says ⏳ running, ✅ merged, or ❌ failed. If a check FAILS, fix it on your branch and run
+   `npm run ship` again. When it says MERGED you are done. **Never wait for the Game Director:** a green
+   pull request merges by itself. If status says "GitHub is holding the checks", the user has not accepted
+   the repo invitation yet (https://github.com/tacox2404-sudo/AURA-AI/invitations).
 4. Branches stay short (1-2 days). To read other teams' work: `git pull` (merged) or
    `git fetch` then `git checkout <their-branch>` (look, don't edit).
 5. Never force-push, never push to `main`, never skip the checks.
@@ -74,7 +79,7 @@ into `main` (a GitHub ruleset enforces it: pull request + green checks, no force
 - `npm run smoke` plays the game automatically (after a build) and fails on any crash.
   First time only: `npx playwright install chromium`.
 - `npm run scope` checks your branch only changed your area's files.
-- `npm run start -- <area>/<task>` begins a task; `npm run ship` finishes it (checks + push + PR).
+- `npm run start -- <area>/<task>` begins a task; `npm run ship` finishes it (checks + push + PR + auto-merge); `npm run status` follows your pull request until it is merged.
 - `npm run check` = build + smoke.
 - Two players locally: open two browser windows, create two accounts (demo mode syncs tabs).
 

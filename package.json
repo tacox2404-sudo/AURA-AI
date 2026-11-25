@@ -10,7 +10,8 @@
     "scope": "node scripts/check-scope.mjs",
     "check": "npm run build && npm run smoke",
     "start": "node scripts/start-task.mjs",
-    "ship": "node scripts/ship.mjs"
+    "ship": "node scripts/ship.mjs",
+    "status": "node scripts/status.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",
