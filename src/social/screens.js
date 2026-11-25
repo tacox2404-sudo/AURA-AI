@@ -1,4 +1,5 @@
 // LOGIN, HOUSE PICKER and ONBOARDING screens (owned by Social).
+import { tagline, loadingLine } from './fun.js';
 
 // Turns technical errors (from Supabase or the browser) into short, friendly sentences.
 export function friendly(message = '') {
@@ -12,25 +13,113 @@ export function friendly(message = '') {
   return message;
 }
 
+// The landing page + login. Looks like a small website: what AURA is, what you can do,
+// how it works, the ways to join, and the login form. Styles are injected below because
+// this folder can't edit src/styles.css.
+const FEATURES = [
+  ['🏠', 'Build your home', 'Place furniture, add rooms and pick a vibe. AI can even invent a room from one sentence.'],
+  ['🧑‍🤝‍🧑', 'Hang out live, or later', 'See each other walk around, chat and wave. Or visit when nobody is home and leave a note.'],
+  ['🎲', 'Play together', 'Connect Four, Tic-Tac-Toe and Draw & Guess, live or turn by turn.'],
+  ['📸', 'Keep memories', 'A gallery, shared calendar with countdowns, and a gift wish list with secret claiming.'],
+  ['🌍', 'Plan and explore', 'Weather in each of your cities, movie night, a travel planner and link boards.'],
+  ['📱', 'Made for phones', 'Tap to walk and build. Works in any browser, nothing to install.'],
+];
+const STEPS = [
+  ['1', 'Make an account', 'Just a username and a password. No email needed.'],
+  ['2', 'Create or join a house', 'Pick Love Nest, Friends Crib, Family Home or Solo Studio, or enter an invite code.'],
+  ['3', 'Invite your people', 'Share a link. Housemates can build, guests can visit, chat and play.'],
+];
+const WAYS = [
+  ['🔑', 'Username + password', 'Create an account in ten seconds. Your houses follow you to any device.'],
+  ['💌', 'Invite link', 'Got a link from a friend? Open it, make an account, and you are in their house automatically.'],
+  ['🧪', 'Demo mode', 'Just looking? Try it with no account. Everything stays in your browser.'],
+];
+
+function injectLandingStyles() {
+  if (document.getElementById('aura-landing-css')) return;
+  const st = document.createElement('style');
+  st.id = 'aura-landing-css';
+  st.textContent = `
+  .al { max-width: 1040px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 20px) 18px 48px; color: var(--ink); }
+  .al h1 { font-size: clamp(2.6rem, 8vw, 4.2rem); margin: .1em 0; letter-spacing: -.02em; }
+  .al h2 { font-size: 1.5rem; margin: 2.2rem 0 .8rem; text-align: center; }
+  .al .al-top { display: grid; gap: 22px; align-items: center; }
+  .al .al-hero { text-align: center; }
+  .al .al-logo { font-size: 3.6rem; }
+  .al .al-tag { font-size: 1.15rem; color: var(--ink-2); min-height: 2.8em; transition: opacity .3s; }
+  .al .al-lead { max-width: 34em; margin: .4em auto 1em; line-height: 1.5; }
+  .al .al-cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .al .al-form { margin: 0; }
+  .al .al-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  .al .al-card { background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: 0 4px 16px rgba(43,35,80,.08); text-align: left; }
+  .al .al-card .big { font-size: 1.8rem; }
+  .al .al-card b { display: block; margin: .2em 0; }
+  .al .al-card p { margin: 0; color: var(--ink-2); font-size: .95rem; line-height: 1.4; }
+  .al .al-step { display: flex; gap: 12px; align-items: flex-start; }
+  .al .al-num { flex: none; width: 2rem; height: 2rem; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+  .al .al-foot { text-align: center; margin-top: 2.4rem; color: var(--ink-2); font-size: .9rem; }
+  @media (min-width: 860px) {
+    .al .al-top { grid-template-columns: 1.15fr .85fr; }
+    .al .al-hero { text-align: left; }
+    .al .al-lead { margin-left: 0; }
+    .al .al-cta { justify-content: flex-start; }
+    .al .al-grid.f { grid-template-columns: repeat(3, 1fr); }
+    .al .al-grid.s, .al .al-grid.w { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (min-width: 560px) and (max-width: 859px) { .al .al-grid.f { grid-template-columns: repeat(2, 1fr); } }
+  `;
+  document.head.appendChild(st);
+}
+
 export function loginScreen(ctx, { onDone, invited = false }) {
   const { ui, backend } = ctx; const { h } = ui;
+  injectLandingStyles();
   const user = h('input', { placeholder: 'Username', autocomplete: 'username', maxlength: 20 });
   const pass = h('input', { placeholder: 'Password', type: 'password', autocomplete: 'current-password' });
   const err = h('p', { class: 'error' });
   const go = (fn) => async () => {
     err.textContent = '';
-    try { onDone(await fn(user.value, pass.value)); } catch (e) { err.textContent = friendly(e.message); }
+    err.className = 'muted'; err.textContent = loadingLine(); // a silly line while we wait
+    try { onDone(await fn(user.value, pass.value)); } catch (e) { err.className = 'error'; err.textContent = friendly(e.message); }
   };
-  ui.screen(h('div', { class: 'screen center' },
-    h('div', { class: 'logo' }, '🏠'),
-    h('h1', {}, 'OurPlace'),
-    h('p', { class: 'tagline' }, 'A cozy home you build with your people, wherever they are.'),
+  const form = h('div', { class: 'card form al-form', id: 'al-form' },
+    h('h3', { style: { margin: '0 0 .4em' } }, invited ? 'Join the house' : 'Come on in'),
+    user, pass, err,
+    h('div', { class: 'row-btns' },
+      h('button', { class: 'primary', onclick: go((u, p) => backend.signIn(u, p)) }, 'Log in'),
+      h('button', { onclick: go((u, p) => backend.signUp(u, p)) }, 'Create account')),
+    backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: accounts live in this browser only. Open a second tab with another account to play together.') : null);
+
+  // the tagline changes every few seconds
+  const tag = h('p', { class: 'al-tag' }, tagline());
+  const timer = setInterval(() => {
+    if (!tag.isConnected) return clearInterval(timer);
+    tag.style.opacity = 0;
+    setTimeout(() => { tag.textContent = tagline(); tag.style.opacity = 1; }, 300);
+  }, 4500);
+
+  const card = ([icon, title, text]) => h('div', { class: 'al-card' }, h('span', { class: 'big' }, icon), h('b', {}, title), h('p', {}, text));
+  const step = ([n, title, text]) => h('div', { class: 'al-card al-step' }, h('span', { class: 'al-num' }, n), h('div', {}, h('b', {}, title), h('p', {}, text)));
+
+  ui.screen(h('div', { class: 'al' },
     invited ? h('p', { class: 'card', style: { textAlign: 'center' } }, '💌 You have been invited to a house! Create an account (or log in) and you will join it automatically.') : null,
-    h('div', { class: 'card form' }, user, pass, err,
-      h('div', { class: 'row-btns' },
-        h('button', { class: 'primary', onclick: go((u, p) => backend.signIn(u, p)) }, 'Log in'),
-        h('button', { onclick: go((u, p) => backend.signUp(u, p)) }, 'Create account'))),
-    backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: accounts live in this browser only. Open a second tab with another account to play together.') : null));
+    h('div', { class: 'al-top' },
+      h('div', { class: 'al-hero' },
+        h('div', { class: 'al-logo' }, '🏠'),
+        h('h1', {}, 'AURA'),
+        tag,
+        h('p', { class: 'al-lead' }, 'A cozy low-poly world where you build a shared house with your partner, friends or family, then hang out, play games and keep memories together. Live, or at different times.'),
+        h('div', { class: 'al-cta' },
+          h('button', { class: 'primary', onclick: () => form.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, 'Get started'),
+          backend.mode === 'demo' ? null : h('a', { class: 'link', href: '?demo=1' }, 'Just looking? Try the demo'))),
+      form),
+    h('h2', {}, 'What can you do?'),
+    h('div', { class: 'al-grid f' }, ...FEATURES.map(card)),
+    h('h2', {}, 'How it works'),
+    h('div', { class: 'al-grid s' }, ...STEPS.map(step)),
+    h('h2', {}, 'Ways to join'),
+    h('div', { class: 'al-grid w' }, ...WAYS.map(card)),
+    h('p', { class: 'al-foot' }, 'Free, friendly and non-commercial. Made with 💛 by the AURA team.')));
 }
 
 export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, joinCode = '' }) {

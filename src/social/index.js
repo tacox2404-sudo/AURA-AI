@@ -3,6 +3,7 @@
 // people online, chat and points.
 
 import { loginScreen, housePicker, onboarding, friendly } from './screens.js';
+import { loadingLine, knockLine } from './fun.js';
 import { initChat } from './chat.js';
 import { initPoints } from './points.js';
 
@@ -38,6 +39,7 @@ export function initSocial(ctx) {
   async function afterLogin(me) {
     store.set({ me });
     if (joinParam) {
+      ui.toast(knockLine());
       try {
         const { house, role } = await backend.joinWithCode(joinParam, me);
         joinParam = ''; history.replaceState(null, '', location.pathname);
@@ -61,7 +63,7 @@ export function initSocial(ctx) {
       me, houses, joinCode: joinParam,
       onOpen: openHouse,
       onCreate: () => onboarding(ctx, { me, onCancel: showPicker, onDone: createHouse }),
-      onJoin: async (code) => { const { house, role } = await backend.joinWithCode(code, me); joinParam = ''; enterHouse(house, role); },
+      onJoin: async (code) => { ui.toast(knockLine()); const { house, role } = await backend.joinWithCode(code, me); joinParam = ''; enterHouse(house, role); },
       onLogout: signOut,
     });
   }
@@ -73,6 +75,7 @@ export function initSocial(ctx) {
   }
 
   async function createHouse(answers) {
+    ui.toast(loadingLine());
     const draft = ctx.use('build.makeHouse')(answers);
     const house = await backend.createHouse(draft, store.get().me);
     await enterHouse(house, 'owner');
