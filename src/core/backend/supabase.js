@@ -154,28 +154,51 @@ export function createSupabaseBackend(url, anonKey) {
     },
 
     // ---------- live (Supabase Realtime: presence + broadcast) ----------
+    // Live connection to everyone in a house.
+    // - PRESENCE says who is here and their look (name, avatar, room). It is only re-sent when that changes.
+    // - POSITIONS travel as light "pos" messages (about 5 per second while moving, and a slow heartbeat
+    //   so people who join later find out where everyone is standing). Presence is not built for
+    //   constant updates: re-sending it every step makes players freeze or vanish for the others.
     connect(houseId, me, { onPresence, onEvent }) {
       const ch = sb.channel(`house:${houseId}`, { config: { presence: { key: me.id }, broadcast: { self: false } } });
+      const info = new Map(); // userId -> who they are (from presence)
+      const pos = new Map();  // userId -> latest { roomId, x, z } (from "pos" messages)
+      const emit = () => onPresence([...info].map(([id, i]) => ({ ...i, ...(pos.get(id) || {}), userId: id })));
+
       ch.on('presence', { event: 'sync' }, () => {
         const state = ch.presenceState();
-        const list = Object.entries(state).filter(([k]) => k !== me.id).map(([, metas]) => metas[metas.length - 1]);
-        onPresence(list);
+        const before = new Set(info.keys());
+        info.clear();
+        for (const [k, metas] of Object.entries(state)) if (k !== me.id) info.set(k, metas[metas.length - 1]);
+        for (const id of [...pos.keys()]) if (!info.has(id)) pos.delete(id);
+        emit();
+        if ([...info.keys()].some((id) => !before.has(id))) sendPos(true); // someone new arrived: tell them where I am
       });
+      ch.on('broadcast', { event: 'pos' }, ({ payload }) => { if (payload?.userId && payload.userId !== me.id) { pos.set(payload.userId, { roomId: payload.roomId, x: payload.x, z: payload.z }); emit(); } });
       ch.on('broadcast', { event: 'e' }, ({ payload }) => onEvent(payload));
-      let ready = false; let pending = null;
-      ch.subscribe((status) => { if (status === 'SUBSCRIBED') { ready = true; if (pending) ch.track(pending); } });
-      let last = 0; let timer = null;
+
+      let ready = false; let mine = null; let lastInfoKey = ''; let lastPosSent = 0; let posTimer = null;
+      const trackInfo = () => {
+        if (!ready || !mine) return;
+        const i = { userId: me.id, name: mine.name, avatar: mine.avatar, roomId: mine.roomId, x: mine.x, z: mine.z };
+        const key = JSON.stringify([i.name, i.avatar, i.roomId]);
+        if (key !== lastInfoKey) { lastInfoKey = key; ch.track(i); }
+      };
+      function sendPos(force) {
+        if (!ready || !mine) return;
+        const now = Date.now();
+        clearTimeout(posTimer);
+        if (!force && now - lastPosSent < 200) { posTimer = setTimeout(() => sendPos(true), 220); return; }
+        lastPosSent = now;
+        ch.send({ type: 'broadcast', event: 'pos', payload: { userId: me.id, roomId: mine.roomId, x: mine.x, z: mine.z } });
+      }
+      ch.subscribe((status) => { if (status === 'SUBSCRIBED') { ready = true; trackInfo(); sendPos(true); } });
+      const heartbeat = setInterval(() => sendPos(true), 3000); // late joiners learn where everyone stands
+
       return {
-        updatePresence(p) {
-          pending = { ...p, userId: me.id };
-          // throttle presence updates to ~4 per second
-          const now = Date.now();
-          clearTimeout(timer);
-          if (ready && now - last > 250) { last = now; ch.track(pending); }
-          else timer = setTimeout(() => { if (ready) { last = Date.now(); ch.track(pending); } }, 260);
-        },
+        updatePresence(p) { mine = p; trackInfo(); sendPos(false); },
         send(e) { if (ready) ch.send({ type: 'broadcast', event: 'e', payload: { ...e, from: me.id } }); },
-        leave() { sb.removeChannel(ch); },
+        leave() { clearInterval(heartbeat); clearTimeout(posTimer); sb.removeChannel(ch); },
       };
     },
 
