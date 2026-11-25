@@ -18,9 +18,14 @@ Do NOT delete, reset, force-push or overwrite anything. If I have unsaved or unp
 ## Step 2: tools
 If Node.js (LTS), Git or the GitHub CLI (https://cli.github.com) are missing, tell me exactly how to install them for my computer, then wait for me. Once `gh` is installed, run `gh auth login` for me to complete in the browser (GitHub.com, HTTPS, login with browser).
 
-## Step 3: accept the team invitation (only I can do this)
-Tell me to open https://github.com/tacox2404-sudo/AURA-AI/invitations while logged in to GitHub, and click **Accept invitation**. (The invitation was also emailed to me. If the page says there is nothing to accept, I may already be in, so go on.) Then check it worked:
-`gh api repos/tacox2404-sudo/AURA-AI --jq .permissions.push` must print `true`. If it does not, stop and tell me what to ask the Game Director.
+## Step 3: accept the team invitation (this is the one step only I can do, so guide me clearly)
+Do this with me, one small instruction at a time:
+1. Open the page for me with a command: on Mac `open https://github.com/tacox2404-sudo/AURA-AI/invitations`, on Windows `start https://github.com/tacox2404-sudo/AURA-AI/invitations` (on Linux `xdg-open`). Also print the link so I can click it.
+2. Tell me what I should see: a GitHub page saying that **tacox2404-sudo invited me to collaborate on tacox2404-sudo/AURA-AI**, with a big green **Accept invitation** button. Tell me to click that button, then say "done".
+3. If I am not logged in, GitHub asks me to sign in first: I must sign in with MY GitHub account (the one I forked with), then the page opens again.
+4. If the page says "404" or "not found": I am logged in with the wrong account. Tell me to switch accounts in the top-right menu, or open the link from the email "tacox2404-sudo invited you to collaborate" that GitHub sent me.
+5. If the page says there is nothing to accept, I may already be in. If the invitation seems expired (they last 7 days), tell me to ask the Game Director to send it again.
+6. After I say "done", verify it: `gh api repos/tacox2404-sudo/AURA-AI --jq .permissions.push` must print `true`. If it does not, stop and tell me what to ask the Game Director.
 
 ## Step 4: point my folder at the team repo (keep my fork as a backup)
 1. If `origin` is my fork: `git remote rename origin fork` then `git remote add origin https://github.com/tacox2404-sudo/AURA-AI.git`. If `origin` is already the team repo, skip this.
