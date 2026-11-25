@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, and a friend request can be sent and accepted.
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, and a friend can visit an opened house as a guest.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -166,6 +166,23 @@ try {
   await c.waitForTimeout(600);
   const friendsOfA = await a.evaluate(async () => (await window.__ourplace.backend.listFriends()).map((f) => `${f.username}:${f.status}`));
   if (!friendsOfA.includes('tester_c:friend')) throw new Error(`A's friends are ${JSON.stringify(friendsOfA)}, expected tester_c:friend`);
+
+  log('visiting: owner opens the house, a friend visits as a guest');
+  const houseId = await a.evaluate(() => window.__ourplace.store.get().house.id);
+  await a.evaluate(() => window.__ourplace.use('social.openPeople')());
+  await a.waitForTimeout(300);
+  await a.click('text=Friends can visit');
+  await a.locator('button', { hasText: /^Turn on$/ }).click();
+  await a.waitForTimeout(600);
+  await a.keyboard.press('Escape');
+  await c.click('text=← Back'); // C is on the Friends page: go back and open it again to refresh the list
+  await c.waitForTimeout(500);
+  await c.click('text=🤝 Friends');
+  await c.waitForTimeout(700);
+  await c.locator('button', { hasText: /^Visit$/ }).click();
+  await c.waitForTimeout(1500);
+  const visit = await c.evaluate(() => { const s = window.__ourplace.store.get(); return { id: s.house?.id, role: s.role }; });
+  if (visit.id !== houseId || visit.role !== 'guest') throw new Error(`Visit gave house ${visit.id} as "${visit.role}", expected the friend's house as guest`);
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
