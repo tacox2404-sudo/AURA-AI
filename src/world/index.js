@@ -1,21 +1,28 @@
 // WORLD AREA - entry point. Owner: World.
-// The 3D scene: room rendering, camera, my avatar, other players, tapping and walking.
-// Furniture meshes come from the Building area through ctx.use('build.itemMesh').
+// The 3D scene: the whole house as one multi-floor building, camera, my avatar, other players,
+// tapping and walking. Furniture meshes come from the Building area through ctx.use('build.itemMesh').
+//
+// The house is a cosy penthouse (building.js): two rooms per floor joined by a doorway, a balcony on
+// every floor and a spiral staircase outside. The Entrance is on the ground floor, the top floor is the
+// Penthouse. store.roomId is still "the room I'm in": walk through a doorway and it changes by itself.
 //
 // How you move (phone first):
-//   tap the floor = walk there        double-tap = run there      press and hold = walk after your finger
+//   tap the floor = walk there (also into the next room)   double-tap = run   press and hold = follow your finger
 //   tap furniture = walk up and use it    tap a seat = sit    tap a friend = go say hi (you wave)
-//   tap a door = walk into that room      tap the pet = pet it    pinch / mouse wheel = zoom
-//   keyboard: WASD / arrows walk (Shift runs), Q / E turn the camera, 1-7 emotes
-// Extra pieces live in their own files: doors.js, daylight.js (windows + time of day), pet.js, emotes.js.
+//   tap a doorway sign = go to that room    ▲ / ▼ buttons or the stairs = go up / down a floor
+//   tap the pet = pet it    pinch / mouse wheel = zoom (zoom out to see the whole building)
+//   keyboard: WASD / arrows walk (Shift runs, walk into a doorway to go through), Q / E turn the camera, 1-7 emotes
+// Other files: building.js (layout, balconies, stairs), roomMesh.js (one room), daylight.js (time of day +
+// windows), pet.js, emotes.js, seats.js, walkGrid.js, avatar.js, wardrobe.js.
 
 import * as THREE from 'three';
-import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance, playEmote } from './avatar.js';
+import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance } from './avatar.js';
 import { isSeat, seatSlots } from './seats.js';
 import { initWardrobe } from './wardrobe.js';
 import { makeWalkGrid } from './walkGrid.js';
-import { buildDoors, updateDoors } from './doors.js';
-import { buildDaylight, updateWindows, lightAt } from './daylight.js';
+import { layoutBuilding, findRoute, linkPath, buildOutside, FLOOR_H } from './building.js';
+import { buildRoomMesh, setWallCut } from './roomMesh.js';
+import { buildWindows, lightAt, GLOWING } from './daylight.js';
 import { createPet } from './pet.js';
 import { initEmotes } from './emotes.js';
 import { currentRoom } from '../core/store.js';
@@ -34,14 +41,16 @@ export function initWorld(ctx) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#cfe8ff');
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
   const hemi = new THREE.HemisphereLight('#ffffff', '#b9a48a', 1.4);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff3df', 1.6);
-  sun.position.set(6, 12, 8); sun.castShadow = true;
+  sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -10, right: 10, top: 10, bottom: -10 });
-  scene.add(sun);
+  Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, far: 60 });
+  scene.add(sun, sun.target);
+  // a few warm lights for lamps, candles and the fireplace on my floor (lights are expensive on phones)
+  const lightPool = Array.from({ length: 4 }, () => { const l = new THREE.PointLight('#ffb35c', 0, 5.5, 1.6); scene.add(l); return l; });
 
   function resize() {
     const w = host.clientWidth || innerWidth, h = host.clientHeight || innerHeight;
@@ -50,106 +59,138 @@ export function initWorld(ctx) {
   }
   addEventListener('resize', resize); resize();
 
-  // ---------- room ----------
-  let roomGroup = null; let roomRef = null; let floorMesh = null; let grid = null;
-  const itemMeshes = []; // for tapping
+  // ---------- the building ----------
+  let layout = null;          // where every room is (building.js)
+  const rooms = new Map();    // roomId -> { info, mesh, walk, win }
+  let outside = null;         // balconies, stairs, garden, signs
+  let houseGroup = null;
+  let roomRef = null;         // the room I'm in
+  let walk = null;            // its walk grid
   let bounds = { w: 8, d: 8 };
-  let walk = null; // walk grid: where furniture is, and paths around it (walkGrid.js)
-  let walls = [];  // { group, out: [x, z] } - the side of the room each wall is on
-  let doors = [];  // doors to the other rooms (doors.js)
-  let doorTargets = []; // meshes you can tap to use a door
-  let daylight = null;  // windows + night lights (daylight.js)
-  let windows = [];
+  let itemMeshes = [];        // furniture on my floor (for tapping)
+  let floorMeshes = [];       // floors of the rooms on my floor
+  const curFloor = () => (roomRef && layout?.rooms.get(roomRef.id)?.floor) || 0;
+  const floorY = () => curFloor() * FLOOR_H;
+  // the floor the camera shows: on the stairs it switches halfway up (or down)
+  const viewFloor = () => (me.transit?.stairs ? Math.max(0, Math.min(layout.floors.length - 1, Math.round((me.holder.position.y - 0.2) / FLOOR_H))) : curFloor());
+  const roomCenter = (id) => layout.toGlobal(id, 0, 0);
+  const toLocal = (id, g) => { const c = roomCenter(id); return new THREE.Vector3(g.x - c.x, 0, g.z - c.z); };
+  const cellToLocal = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
+  const localToCell = (p, b = bounds) => ({ x: Math.floor(p.x + b.w / 2), z: Math.floor(p.z + b.d / 2) });
 
-  const cellToWorld = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
-  const worldToCell = (p) => ({ x: Math.floor(p.x + bounds.w / 2), z: Math.floor(p.z + bounds.d / 2) });
-
-  function buildRoom(room) {
-    if (roomGroup) scene.remove(roomGroup);
-    itemMeshes.length = 0;
-    roomGroup = new THREE.Group(); roomRef = room;
-    const [w, d] = room.size; bounds = { w, d };
-    const t = room.theme;
-    // floor: checker tiles
-    const cv = document.createElement('canvas'); cv.width = w * 32; cv.height = d * 32;
-    const g = cv.getContext('2d');
-    const c1 = new THREE.Color(t.floor), c2 = c1.clone().offsetHSL(0, 0, -0.04);
-    for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) { g.fillStyle = '#' + ((i + j) % 2 ? c1 : c2).getHexString(); g.fillRect(i * 32, j * 32, 32, 32); }
-    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter;
-    floorMesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), [null, null, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }), null, null, null].map((x) => x || new THREE.MeshStandardMaterial({ color: c2 })));
-    floorMesh.position.y = -0.1; floorMesh.receiveShadow = true; roomGroup.add(floorMesh);
-    // Four walls, but only the two FAR from the camera are shown (cut-away, like The Sims).
-    // When you rotate the camera, updateWalls() swaps which ones are visible.
-    const wallMat = new THREE.MeshStandardMaterial({ color: t.wall, roughness: 0.95 });
-    const trim = new THREE.MeshStandardMaterial({ color: new THREE.Color(t.wall).offsetHSL(0, 0, -0.18) });
-    walls = [];
-    const addWall = (out, len, x, z, alongX) => {
-      const g = new THREE.Group(); g.position.set(x, 0, z);
-      const wall = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len, 2.6, 0.2) : new THREE.BoxGeometry(0.2, 2.6, len), wallMat);
-      wall.position.y = 1.3; wall.receiveShadow = true;
-      const base = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len + 0.02, 0.18, 0.24) : new THREE.BoxGeometry(0.24, 0.18, len + 0.02), trim);
-      base.position.y = 0.09;
-      g.add(wall, base); roomGroup.add(g); walls.push({ group: g, out });
-    };
-    addWall([0, -1], w + 0.4, 0, -d / 2 - 0.1, true);  // back
-    addWall([0, 1], w + 0.4, 0, d / 2 + 0.1, true);    // front
-    addWall([-1, 0], d, -w / 2 - 0.1, 0, false);       // left
-    addWall([1, 0], d, w / 2 + 0.1, 0, false);         // right
-    walk = makeWalkGrid(room, ctx.use('build.footprint'), ctx.use('build.itemDef'));
-    // doors to the other rooms, then windows + lamps that glow at night
-    const dr = buildDoors(room, store.get().house, walk);
-    doors = dr.doors; doorTargets = dr.tapTargets; roomGroup.add(dr.group);
-    daylight = buildDaylight(room, walk, doors.map((x) => x.cell), cellToWorld, ctx.use('build.footprint'));
-    windows = daylight.windows; roomGroup.add(daylight.group);
-    applyDaylight(true);
-    // items
-    for (const item of room.items) {
-      const mesh = ctx.use('build.itemMesh')(item, t);
-      if (!mesh) continue;
-      const [sw, sd] = ctx.use('build.footprint')(item) || [1, 1];
-      mesh.position.copy(cellToWorld(item.x, item.z, sw, sd));
-      mesh.rotation.y = -item.rot * Math.PI / 2;
-      mesh.traverse((o) => { o.userData.itemId = item.id; });
-      roomGroup.add(mesh); itemMeshes.push(mesh);
+  function buildHouse(house) {
+    if (houseGroup) scene.remove(houseGroup);
+    houseGroup = new THREE.Group(); rooms.clear();
+    const footprint = ctx.use('build.footprint'), itemDef = ctx.use('build.itemDef'), itemMesh = ctx.use('build.itemMesh');
+    const walks = new Map(house.rooms.map((r) => [r.id, makeWalkGrid(r, footprint, itemDef)]));
+    layout = layoutBuilding(house, walks);
+    for (const room of house.rooms) {
+      const info = layout.rooms.get(room.id);
+      const mesh = buildRoomMesh(room, info, layout, itemMesh, footprint);
+      // windows only on outside walls, never next to a door
+      const sides = [[0, -1], [0, 1]]; if (!info.left) sides.push([-1, 0]); if (!info.right) sides.push([1, 0]);
+      const avoid = [];
+      for (const l of layout.links) { if (l.a === room.id) avoid.push(l.cellA); if (l.b === room.id) avoid.push(l.cellB); }
+      if (info.floor === 0 && info.index === 0) avoid.push({ x: Math.floor(room.size[0] / 2), z: room.size[1] - 1 });
+      const win = buildWindows(room, walks.get(room.id), sides, avoid);
+      mesh.group.add(win.group);
+      houseGroup.add(mesh.group);
+      rooms.set(room.id, { info, mesh, walk: walks.get(room.id), win });
     }
-    grid = new THREE.GridHelper(Math.max(w, d), Math.max(w, d), '#ffffff', '#ffffff');
-    grid.material.opacity = 0.35; grid.material.transparent = true; grid.position.y = 0.01;
-    grid.scale.set(w / Math.max(w, d), 1, d / Math.max(w, d));
-    grid.visible = store.get().mode === 'build';
-    roomGroup.add(grid);
-    scene.add(roomGroup);
-    updateWalls();
-    // furniture may have moved: re-plan my walk around the new layout
-    if (me.path.length) me.path = walk.pathToPoint(me.pos, me.path[me.path.length - 1]) || [];
-    if (me.sit && !room.items.some((i) => i.id === me.sit.item)) standUp(); // my seat was removed
-    syncRemotes();
+    outside = buildOutside(layout, house);
+    houseGroup.add(outside.group);
+    scene.add(houseGroup);
+  }
+
+  /** I'm now in this room: remember it, show the right floor, move the lights. */
+  function enterRoom(room) {
+    roomRef = room;
+    const r = rooms.get(room.id);
+    walk = r?.walk || null;
+    bounds = { w: room.size[0], d: room.size[1] };
+    itemMeshes = []; floorMeshes = [];
+    const f = curFloor();
+    for (const x of rooms.values()) if (x.info.floor === f) { itemMeshes.push(...x.mesh.items); floorMeshes.push(x.mesh.floorMesh); }
+    updateVisibility(true);
+    placeLights();
+    applyDaylight();
+    floorUi.render();
+  }
+
+  // Which walls to cut down: on my floor, the ones between the camera and me.
+  const facesCamera = (out) => out[0] * camDir.x + out[1] * camDir.z >= 0.05;
+  let shownFloor = -1;
+  function updateVisibility(force) {
+    if (!layout || !roomRef) return;
+    const f = viewFloor(); const mine = layout.rooms.get(roomRef.id);
+    const mode = store.get().mode;
+    for (const [id, r] of rooms) {
+      const fl = r.info.floor;
+      if (force || f !== shownFloor) {
+        r.mesh.group.visible = fl <= f;
+        r.mesh.roof.visible = fl < f;
+        for (const m of r.mesh.items) m.visible = fl === f;
+      }
+      r.mesh.grid.visible = mode === 'build' && id === roomRef.id;
+      for (const wl of r.mesh.walls) {
+        if (fl < f) { setWallCut(wl, wl.interior); continue; } // floors below: outside walls up, like a building
+        if (fl > f) continue;
+        // a shared wall belongs to the left room; seen from the right room it faces the other way
+        let out = wl.out;
+        if (wl.interior && mine && mine.left === id) out = [-out[0], -out[1]];
+        setWallCut(wl, facesCamera(out) || (wl.interior && mine?.floor === fl && mine.room.id !== id && mine.left !== id));
+      }
+      for (const wn of r.win.windows) wn.group.visible = fl < f || (fl === f && !facesCamera(wn.out));
+    }
+    if (force || f !== shownFloor) {
+      outside.perFloor.forEach((g, i) => { g.visible = i <= f; });
+      outside.stairs.forEach((g, i) => { g.visible = i <= f; });
+      for (const s of outside.signs) s.sprite.visible = s.floor === f && (!s.room || s.room === roomRef.id); // doorway signs: only on my side
+      shownFloor = f;
+      syncRemotes();
+    }
   }
 
   // ---------- time of day ----------
-  // ?hour=21 in the address bar shows the room at 9 pm (handy for testing).
-  const forcedHour = Number(new URLSearchParams(location.search).get('hour'));
+  // ?hour=21 in the address bar shows the house at 9 pm (handy for testing).
+  const params = new URLSearchParams(location.search);
+  const forcedHour = params.has('hour') ? Number(params.get('hour')) : NaN;
   let lastLight = null; let lightCheck = 0;
-  function applyDaylight(force) {
+  function applyDaylight() {
     const d = new Date();
-    const hour = Number.isFinite(forcedHour) && new URLSearchParams(location.search).has('hour') ? forcedHour : d.getHours() + d.getMinutes() / 60;
+    const hour = Number.isFinite(forcedHour) ? forcedHour : d.getHours() + d.getMinutes() / 60;
     const light = lightAt(hour);
     lastLight = light;
     hemi.intensity = light.hemi; sun.intensity = light.sunI; sun.color.copy(light.sun);
-    const wallCol = new THREE.Color(roomRef?.theme?.wall || '#f4efe6');
-    scene.background = wallCol.lerp(light.sky, 0.6);
-    daylight?.update(light);
-    if (force) lightCheck = 0;
+    scene.background = new THREE.Color('#dfeaf5').lerp(light.sky, 0.75);
+    for (const r of rooms.values()) r.win.update(light);
+    for (const l of lightPool) l.intensity = l.userData.on ? 2.2 * light.night : 0;
+  }
+  function placeLights() {
+    const f = curFloor(); const spots = [];
+    const footprint = ctx.use('build.footprint');
+    // lights in my room first, then the rest of my floor
+    const order = [...rooms.values()].filter((r) => r.info.floor === f).sort((a) => (a.info.room.id === roomRef?.id ? -1 : 1));
+    for (const r of order) for (const item of r.info.room.items) {
+      const y = GLOWING[item.kind]; if (y == null) continue;
+      const [sw, sd] = footprint(item) || [1, 1];
+      spots.push({ p: layout.cellGlobal(r.info.room.id, { x: item.x + sw / 2 - 0.5, z: item.z + sd / 2 - 0.5 }), y, tv: item.kind === 'tv' });
+    }
+    lightPool.forEach((l, i) => {
+      const s = spots[i]; l.userData.on = !!s;
+      if (s) { l.position.set(s.p.x, s.p.y + s.y, s.p.z); l.color.set(s.tv ? '#9ecbff' : '#ffb35c'); }
+    });
   }
 
   // ---------- my avatar ----------
-  // path = list of {x, z} points still to walk through (from the walk grid)
-  // run: this walk is a run (double-tap / Shift). faceAt: turn to look at this spot when I stop.
-  // pendingDoor / pendingFriend: what to do when I arrive. transit: walking through a door right now.
-  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set(), sit: null, pendingSit: null,
-    run: false, faceAt: null, pendingDoor: null, pendingFriend: null, transit: null };
-  let arrivingFrom = null; // the room I just came from through a door: spawn at its door
-  const clearPlans = () => { me.pendingSit = null; me.pendingDoor = null; me.pendingFriend = null; me.faceAt = null; };
+  // pos is in my room's local coordinates (like presence). path = points still to walk through.
+  // route = rooms to walk through to reach a far room (doorways + stairs), goal = what to do when I get there.
+  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), keys: new Set(), sit: null, pendingSit: null,
+    run: false, faceAt: null, pendingFriend: null, transit: null, route: [], goal: null, wasMoving: false };
   scene.add(me.holder);
+  const clearPlans = () => { me.pendingSit = null; me.pendingFriend = null; me.faceAt = null; me.route = []; me.goal = null; };
+  let movingSelf = false; // true while I change room by walking (so the room change doesn't teleport me)
+
   function rebuildMyAvatar() {
     const s = store.get();
     if (me.av) me.holder.clear();
@@ -157,49 +198,56 @@ export function initWorld(ctx) {
     me.holder.add(me.av, nameTag(s.me?.username || 'me', '#ffe08a'));
     if (me.sit) setSitting(me.av, true); // a new outfit while sitting: stay seated
   }
+  /** Put me in the current room (after a jump from the room tabs, or entering the house). */
   function spawn() {
-    if (me.sit) { me.sit = null; if (me.av) setSitting(me.av, false); me.holder.position.y = 0; }
-    clearPlans(); me.transit = null;
-    const back = arrivingFrom && doors.find((x) => x.toRoomId === arrivingFrom);
-    arrivingFrom = null;
-    if (back) {
-      // came through a door: stand just inside the door that leads back, which swings shut behind me
-      me.pos.set(back.spot.x, 0, back.spot.z);
-      me.holder.rotation.y = back.ry;
-      back.open = 1; back.openTarget = 0;
-    } else {
-      me.pos.set((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
-      const free = walk ? walk.nearestFree(me.pos.x, me.pos.z) : me.pos; // never spawn inside furniture
-      me.pos.set(free.x, 0, free.z);
+    if (me.sit) { me.sit = null; if (me.av) setSitting(me.av, false); }
+    clearPlans(); me.transit = null; me.path = [];
+    const info = layout.rooms.get(roomRef.id);
+    let p = null;
+    if (info.floor === 0 && info.index === 0) p = cellToLocal(Math.floor(bounds.w / 2), bounds.d - 1); // just inside the front door
+    else {
+      const l = layout.links.find((x) => x.a === roomRef.id || x.b === roomRef.id); // next to a doorway or the balcony door
+      if (l) { const c = l.a === roomRef.id ? l.cellA : l.cellB; p = cellToLocal(c.x, c.z); }
     }
-    me.path = [];
-    me.holder.position.copy(me.pos);
-    pet.place(walk, me.pos);
+    if (!p) p = new THREE.Vector3((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
+    const free = walk ? walk.nearestFree(p.x, p.z) : p; // never inside furniture
+    me.pos.set(free.x, 0, free.z);
+    placeHolder();
+    pet.place(walk, me.pos, roomCenter(roomRef.id));
     sendPresence(true);
+  }
+  function placeHolder() {
+    if (!layout || !roomRef) return;
+    const g = layout.toGlobal(roomRef.id, me.pos.x, me.pos.z, me.sit ? me.sit.y : 0);
+    me.holder.position.copy(g);
   }
 
   // ---------- other players ----------
-  const remotes = new Map(); // userId -> { holder, av, pos, target, avatarKey }
+  const remotes = new Map(); // userId -> { holder, av, key, target (building coords), roomId, local }
   function syncRemotes() {
     const s = store.get();
-    const here = s.players.filter((p) => p.roomId === s.roomId);
+    const f = curFloor();
+    const here = layout ? s.players.filter((p) => layout.rooms.get(p.roomId)?.floor === f) : []; // everyone on my floor
     const ids = new Set(here.map((p) => p.userId));
     for (const [id, r] of remotes) if (!ids.has(id)) { scene.remove(r.holder); remotes.delete(id); }
     for (const p of here) {
       let r = remotes.get(p.userId);
       const key = JSON.stringify(p.avatar || {}) + p.name;
+      const g = layout.toGlobal(p.roomId, p.x ?? 0, p.z ?? 0, p.sit ? (p.sy || 0) : 0);
       if (!r || r.key !== key) {
         if (r) scene.remove(r.holder);
         const holder = new THREE.Group();
         const av = buildAvatar(p.avatar || randomAppearance());
         holder.add(av, nameTag(p.name || 'friend'));
-        holder.position.set(p.x ?? 0, 0, p.z ?? 0);
+        holder.position.copy(g);
         scene.add(holder);
-        r = { holder, av, key, target: new THREE.Vector3(p.x ?? 0, 0, p.z ?? 0), bubble: null, sit: false, ry: 0 };
+        r = { holder, av, key, target: g.clone(), sit: false, ry: 0 };
         remotes.set(p.userId, r);
       }
+      if (r.roomId && r.roomId !== p.roomId && layout.rooms.get(r.roomId)?.floor !== f) r.holder.position.copy(g); // came up the stairs: appear
+      r.roomId = p.roomId; r.local = { x: p.x ?? 0, z: p.z ?? 0 };
       r.sit = !!p.sit; r.ry = p.ry || 0;
-      r.target.set(p.x ?? 0, r.sit ? (p.sy || 0) : 0, p.z ?? 0);
+      r.target.copy(g);
     }
   }
 
@@ -236,7 +284,68 @@ export function initWorld(ctx) {
       sit: me.sit ? 1 : 0, sy: me.sit ? +me.sit.y.toFixed(3) : 0, ry: me.sit ? +me.sit.ry.toFixed(3) : 0 }); // sit/sy/ry: sitting, how high, which way I face
   }
 
-  // ---------- input: tap / click / pinch ----------
+  // ---------- going somewhere: in my room, or through doorways and up/down the stairs ----------
+  /** Walk to another room (any floor) and then do `goal` there. */
+  function goTo(roomId, goal = null) {
+    if (!layout || !roomRef) return false;
+    standUp(); clearPlans(); me.run = false; me.transit = null;
+    const route = findRoute(layout, roomRef.id, roomId);
+    if (!route) { ui.toast("Can't find the way there"); return false; }
+    me.route = route; me.goal = goal;
+    if (route.length) startLeg(); else doGoal();
+    return true;
+  }
+  /** Walk up to the doorway (or balcony door) of the next step of the route. */
+  function startLeg() {
+    const leg = me.route[0];
+    const cell = leg.link.a === leg.from ? leg.link.cellA : leg.link.cellB;
+    me.path = walk ? walk.pathToCell(me.pos, cell) || [] : [];
+  }
+  /** At the doorway: follow the exact points through it (round the spiral staircase for stairs). */
+  function startTransit(leg) {
+    const pts = linkPath(layout, leg.link, leg.from);
+    pts.unshift(me.holder.position.clone());
+    me.transit = { pts, i: 1, leg, stairs: leg.link.type === 'stairs' };
+  }
+  function finishTransit() {
+    const leg = me.transit.leg; const end = me.transit.pts[me.transit.pts.length - 1];
+    me.transit = null; me.route.shift();
+    const room = store.get().house.rooms.find((r) => r.id === leg.to);
+    movingSelf = true;
+    store.set({ roomId: leg.to });      // my store listener calls enterRoom() for me
+    movingSelf = false;
+    if (roomRef?.id !== leg.to && room) enterRoom(room);
+    const p = toLocal(leg.to, end); me.pos.set(p.x, 0, p.z);
+    pet.place(walk, me.pos, roomCenter(leg.to)); // the pet follows me in
+    sendPresence(true);
+    if (me.route.length) startLeg(); else doGoal();
+  }
+  /** Arrived in the right room: do what I came for. */
+  function doGoal() {
+    const goal = me.goal; me.goal = null;
+    if (!goal || !walk) return;
+    if (goal.type === 'point') { me.path = walk.pathToPoint(me.pos, clampToRoom(goal.p.clone())) || []; me.run = !!goal.run; if (me.path.length) showMarker(me.path[me.path.length - 1], goal.run); }
+    if (goal.type === 'item') useItem(goal.item);
+    if (goal.type === 'seat') trySit(goal.item, goal.p);
+  }
+  /** Walk up to a piece of furniture in my room, face it, and open it. */
+  function useItem(item) {
+    standUp(); me.run = false;
+    if (walk) me.path = walk.pathToItem(me.pos, item) || [];
+    const [fw, fd] = ctx.use('build.footprint')(item) || [1, 1];
+    me.faceAt = cellToLocal(item.x, item.z, fw, fd);
+    bounceItem(item.id);
+    bus.emit('item:activate', { item, room: roomRef });
+  }
+  /** Go one floor up (+1) or down (-1), through the stairs. */
+  function goFloor(dir) {
+    if (!layout) return false;
+    const target = layout.floors[curFloor() + dir];
+    if (!target) return false;
+    return goTo(target.balcony.roomId, null);
+  }
+
+  // ---------- input: tap / click / pinch / hold ----------
   // Pointer events cover mouse, pen and fingers. A "tap" is a quick press that didn't
   // move much AND never had a second finger: so pinching to zoom never makes you walk.
   const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
@@ -244,21 +353,25 @@ export function initWorld(ctx) {
   let down = null;            // where the first finger went down
   let gesture = false;        // true once a second finger joined (pinch), until all fingers lift
   let pinch0 = null;          // { d: finger distance, z: zoom } when the pinch started
-  let zoom = 1;               // 1 = whole room fits; smaller = closer
-  const ZOOM_MIN = 0.45, ZOOM_MAX = 1.3;
+  let zoom = 1;               // 1 = my room fits; smaller = closer; bigger = see the whole building
+  const ZOOM_MIN = 0.45, ZOOM_MAX = 2.0;
   const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
   const fingerGap = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
   const cv = renderer.domElement;
 
-  // Press and hold (one finger, in play mode) = "walk after my finger" until you let go.
+  // Press and hold (one finger, in play mode) = "walk after my finger" (inside my room) until you let go.
   let holdTimer = null; let holding = false; let holdPoint = null; let holdRepath = 0;
   const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  function floorPointAt(clientX, clientY) {
+  function setRay(clientX, clientY) {
     const rect = cv.getBoundingClientRect();
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
+  }
+  function floorPointAt(clientX, clientY) {
+    setRay(clientX, clientY);
+    floorPlane.constant = -floorY();
     const p = new THREE.Vector3();
-    return ray.ray.intersectPlane(floorPlane, p) ? clampToRoom(p) : null;
+    return ray.ray.intersectPlane(floorPlane, p) ? clampToRoom(toLocal(roomRef.id, p)) : null;
   }
   const stopHold = () => { clearTimeout(holdTimer); holdTimer = null; holding = false; };
 
@@ -268,7 +381,7 @@ export function initWorld(ctx) {
       down = { x: e.clientX, y: e.clientY }; gesture = false;
       clearTimeout(holdTimer);
       holdTimer = setTimeout(() => {
-        if (pointers.size !== 1 || gesture || store.get().mode !== 'play' || ui.isPanelOpen() || me.transit) return;
+        if (pointers.size !== 1 || gesture || store.get().mode !== 'play' || ui.isPanelOpen() || me.transit || !roomRef) return;
         const pt = [...pointers.values()][0];
         holding = true; holdPoint = floorPointAt(pt.x, pt.y); holdRepath = 0;
         clearPlans(); standUp(); me.run = false;
@@ -281,8 +394,7 @@ export function initWorld(ctx) {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch0 && pointers.size >= 2) zoom = clampZoom(pinch0.z * pinch0.d / fingerGap());
     if (holding) holdPoint = floorPointAt(e.clientX, e.clientY) || holdPoint;
-    // moved a lot before the hold started: it's a drag, not a hold
-    else if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) { clearTimeout(holdTimer); holdTimer = null; }
+    else if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) { clearTimeout(holdTimer); holdTimer = null; } // a drag, not a hold
   });
   const lift = (e) => {
     pointers.delete(e.pointerId);
@@ -297,105 +409,166 @@ export function initWorld(ctx) {
   cv.addEventListener('pointercancel', lift);
   cv.addEventListener('wheel', (e) => { zoom = clampZoom(zoom + e.deltaY * 0.001); e.preventDefault(); }, { passive: false });
 
+  const isShown = (obj) => { for (let o = obj; o; o = o.parent) if (!o.visible) return false; return true; };
+  const isInside = (obj, root) => { for (let o = obj; o; o = o.parent) if (o === root) return true; return false; };
   let lastFloorTap = { t: 0, x: 0, y: 0 }; // for double-tap = run
+
   function handleTap(e) {
-    const rect = cv.getBoundingClientRect();
-    ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const room = currentRoom(store.get());
-    if (!room) return;
-    const playing = store.get().mode === 'play';
-    if (me.transit) return; // already walking through a door
+    if (!layout || !roomRef || me.transit) return;
+    setRay(e.clientX, e.clientY);
+    const s = store.get(); const mode = s.mode; const playing = mode === 'play';
+    const firstShown = (hits) => hits.find((h) => isShown(h.object));
 
     if (playing) {
-      // 1. the pet
+      // signs are drawn on top of everything, so they win
+      const sign = firstShown(ray.intersectObjects(outside.signs.map((x) => x.sprite), false));
+      if (sign) return useSign(sign.object.userData);
       const petHit = pet.mesh && ray.intersectObject(pet.mesh, true)[0];
-      // 2. a friend's avatar
-      const friendHits = ray.intersectObjects([...remotes.values()].map((r) => r.av), true);
-      // 3. a door, its mat or its sign
-      const doorHit = ray.intersectObjects(doorTargets, true).find((hit) => hit.object.visible && hit.object.userData.doorTo && isShown(hit.object));
-      const nearest = [petHit && { kind: 'pet', d: petHit.distance }, friendHits[0] && { kind: 'friend', d: friendHits[0].distance, hit: friendHits[0] },
-        doorHit && { kind: 'door', d: doorHit.distance - 0.5, hit: doorHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
-      if (nearest?.kind === 'pet') { tapPet(); return; }
-      if (nearest?.kind === 'door') { goToDoor(doors.find((x) => x.toRoomId === nearest.hit.object.userData.doorTo)); return; }
-      if (nearest?.kind === 'friend') {
-        const id = [...remotes.entries()].find(([, r]) => isInside(nearest.hit.object, r.av))?.[0];
-        if (id) { goToFriend(id); return; }
+      const friendHit = firstShown(ray.intersectObjects([...remotes.values()].map((r) => r.av), true));
+      const stairHit = firstShown(ray.intersectObjects(outside.tapTargets.filter((o) => !o.isSprite), true));
+      const near = [petHit && { k: 'pet', d: petHit.distance }, friendHit && { k: 'friend', d: friendHit.distance, h: friendHit },
+        stairHit && { k: 'stairs', d: stairHit.distance, h: stairHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+      const solid = firstShown(ray.intersectObjects([...itemMeshes, ...floorMeshes], true));
+      if (near && (!solid || near.d <= solid.distance + 0.3)) {
+        if (near.k === 'pet') return tapPet();
+        if (near.k === 'stairs') return useSign(near.h.object.userData);
+        if (near.k === 'friend') { const id = [...remotes.entries()].find(([, r]) => isInside(near.h.object, r.av))?.[0]; if (id) return goToFriend(id); }
       }
     }
 
-    const hitItem = ray.intersectObjects(itemMeshes, true)[0];
-    if (hitItem) {
-      const item = room.items.find((i) => i.id === hitItem.object.userData.itemId);
-      const cell = worldToCell(hitItem.point);
-      bus.emit('world:tap', { target: 'item', item, cell, room });
-      if (playing && item) {
-        const def = ctx.use('build.itemDef')(item.kind);
-        if (isSeat(def)) { trySit(item, hitItem.point); return; } // sofas, chairs...: walk over and sit
-        standUp(); clearPlans(); me.run = false;
-        if (walk) me.path = walk.pathToItem(me.pos, item) || []; // walk up next to it
-        const [fw, fd] = ctx.use('build.footprint')(item) || [1, 1];
-        me.faceAt = cellToWorld(item.x, item.z, fw, fd); // and turn to look at it
-        bounceItem(item.id);
-        bus.emit('item:activate', { item, room });
-      }
+    // furniture and floors: in play mode anywhere on my floor; when building or with Pip, only my room
+    const pool = playing ? [...itemMeshes, ...floorMeshes] : [...(rooms.get(roomRef.id)?.mesh.items || []), rooms.get(roomRef.id)?.mesh.floorMesh].filter(Boolean);
+    const hit = firstShown(ray.intersectObjects(pool, true));
+    if (!hit) return;
+    const ud = hit.object.userData;
+    const roomId = ud.roomId || ud.floorOf || hitRoom(hit.object);
+    const room = s.house.rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const local = toLocal(roomId, hit.point);
+    const b = { w: room.size[0], d: room.size[1] };
+    if (ud.itemId) {
+      const item = room.items.find((i) => i.id === ud.itemId);
+      if (roomId === roomRef.id || !playing) bus.emit('world:tap', { target: 'item', item, cell: localToCell(local, b), room });
+      if (!playing || !item) return;
+      const def = ctx.use('build.itemDef')(item.kind);
+      if (roomId !== roomRef.id) { goTo(roomId, isSeat(def) ? { type: 'seat', item, p: local } : { type: 'item', item }); return; }
+      if (isSeat(def)) return trySit(item, local); // sofas, chairs...: walk over and sit
+      clearPlans(); useItem(item);
       return;
     }
-    const hitFloor = floorMesh && ray.intersectObject(floorMesh)[0];
-    if (hitFloor) {
-      const cell = worldToCell(hitFloor.point);
-      bus.emit('world:tap', { target: 'floor', cell, room });
-      if (playing && walk) {
-        const now = performance.now();
-        const dbl = now - lastFloorTap.t < 350 && Math.hypot(e.clientX - lastFloorTap.x, e.clientY - lastFloorTap.y) < 40;
-        lastFloorTap = { t: dbl ? 0 : now, x: e.clientX, y: e.clientY };
-        standUp(); clearPlans();
-        me.run = dbl; // double-tap = run
-        me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || [];
-        if (me.path.length) showMarker(me.path[me.path.length - 1], dbl);
-      }
-    }
+    // the floor
+    if (roomId === roomRef.id) bus.emit('world:tap', { target: 'floor', cell: localToCell(local, b), room });
+    if (!playing || !walk) return;
+    const now = performance.now();
+    const dbl = now - lastFloorTap.t < 350 && Math.hypot(e.clientX - lastFloorTap.x, e.clientY - lastFloorTap.y) < 40;
+    lastFloorTap = { t: dbl ? 0 : now, x: e.clientX, y: e.clientY };
+    if (roomId !== roomRef.id) { goTo(roomId, { type: 'point', p: local, run: dbl }); me.run = dbl; return; }
+    standUp(); clearPlans();
+    me.run = dbl; // double-tap = run
+    me.path = walk.pathToPoint(me.pos, clampToRoom(local)) || [];
+    if (me.path.length) showMarker(me.path[me.path.length - 1], dbl);
   }
-  const isInside = (obj, root) => { for (let o = obj; o; o = o.parent) if (o === root) return true; return false; };
-  const isShown = (obj) => { for (let o = obj; o; o = o.parent) if (!o.visible) return false; return true; };
+  const hitRoom = (obj) => { for (const [id, r] of rooms) if (isInside(obj, r.mesh.group)) return id; return null; };
+  function useSign(ud) {
+    if (ud.go) return goTo(ud.go, null);
+    if (ud.stairs === 'up') return goFloor(1);
+    if (ud.stairs === 'down') return goFloor(-1);
+    if (ud.stairs === 'gap') return goFloor(ud.floor === curFloor() ? 1 : -1); // tapped the spiral itself
+  }
+  const clampToRoom = (p) => { p.x = Math.max(-bounds.w / 2 + 0.3, Math.min(bounds.w / 2 - 0.3, p.x)); p.z = Math.max(-bounds.d / 2 + 0.3, Math.min(bounds.d / 2 - 0.3, p.z)); return p; };
 
   // A ring on the floor where you're walking to (orange when running).
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.28, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false }));
-  marker.rotation.x = -Math.PI / 2; marker.position.y = 0.03; marker.renderOrder = 2; scene.add(marker);
+  marker.rotation.x = -Math.PI / 2; marker.renderOrder = 2; scene.add(marker);
   let markerT = 1;
-  function showMarker(p, run) { marker.position.set(p.x, 0.03, p.z); marker.material.color.set(run ? '#ffb35c' : '#ffffff'); markerT = 0; }
+  function showMarker(p, run) { const g = layout.toGlobal(roomRef.id, p.x, p.z, 0.03); marker.position.copy(g); marker.material.color.set(run ? '#ffb35c' : '#ffffff'); markerT = 0; }
 
   // A tapped piece of furniture does a little bounce, so you see what you tapped.
   const bounces = new Map(); // itemId -> seconds left
   const bounceItem = (id) => bounces.set(id, 0.35);
 
-  // ---------- doors ----------
-  function goToDoor(door) {
-    if (!door) return;
-    standUp(); clearPlans(); me.run = false;
-    me.pendingDoor = door;
-    me.path = walk ? walk.pathToCell(me.pos, door.cell) || [] : [];
-    if (me.path.length) showMarker(me.path[me.path.length - 1], false);
+  // keyboard (desktop): WASD / arrows to walk, Q / E to turn the camera
+  addEventListener('keydown', (e) => {
+    if (e.target.closest?.('input,textarea,select')) return;
+    const k = e.key.toLowerCase();
+    me.keys.add(k);
+    if (!e.repeat && !ui.isPanelOpen() && (k === 'q' || k === 'e')) rotateCamera(k === 'e' ? 1 : -1);
+  });
+  addEventListener('keyup', (e) => me.keys.delete(e.key.toLowerCase()));
+  addEventListener('blur', () => me.keys.clear()); // don't keep walking if the window loses focus
+
+  // ---------- camera rotation ----------
+  const BASE_YAW = Math.atan2(0.62, 0.78); // the original Sims-style angle
+  let camYaw = BASE_YAW, camYawTarget = BASE_YAW;
+  const camDir = new THREE.Vector3(0.62, 0.85, 0.78).normalize(); // from the room toward the camera
+  function rotateCamera(steps = 1) { camYawTarget += steps * Math.PI / 2; }
+  const roundBtn = (label, title, bottom, text, onclick) => ui.h('button', {
+    'aria-label': label, title,
+    style: {
+      position: 'absolute', right: '12px', bottom: `calc(env(safe-area-inset-bottom) + ${bottom}px)`,
+      width: '52px', height: '52px', borderRadius: '50%', border: 'none', fontSize: '24px',
+      background: 'rgba(255,250,243,.95)', boxShadow: 'var(--shadow, 0 4px 16px rgba(0,0,0,.15))',
+      cursor: 'pointer', display: 'none', touchAction: 'manipulation',
+    },
+    onclick,
+  }, text);
+  const rotateBtn = roundBtn('Rotate camera', 'Rotate camera (Q / E)', 96, '⟳', () => rotateCamera(1));
+  host.append(rotateBtn);
+
+  // ---------- floor buttons (left side): ▲ up a floor, the floor's name, ▼ down a floor ----------
+  const floorUi = (() => {
+    const { h } = ui;
+    const btn = (txt, label, dir) => h('button', { 'aria-label': label, 'data-floor': dir > 0 ? 'up' : 'down',
+      style: { width: '48px', height: '44px', border: 'none', background: 'transparent', fontSize: '20px', cursor: 'pointer', touchAction: 'manipulation', borderRadius: '14px' },
+      onclick: () => goFloor(dir) }, txt);
+    const up = btn('▲', 'Go upstairs', 1), dn = btn('▼', 'Go downstairs', -1);
+    const name = h('div', { style: { fontSize: '.68rem', fontWeight: '700', textAlign: 'center', padding: '0 4px', lineHeight: '1.1', maxWidth: '64px', color: 'var(--ink, #2a2240)' } });
+    const box = h('div', { style: {
+      position: 'absolute', left: '12px', bottom: 'calc(env(safe-area-inset-bottom) + 96px)', display: 'none', flexDirection: 'column', alignItems: 'center',
+      padding: '4px', borderRadius: '22px', background: 'rgba(255,250,243,.95)', boxShadow: 'var(--shadow, 0 4px 16px rgba(0,0,0,.15))',
+    } }, up, name, dn);
+    host.append(box);
+    function render() {
+      const s = store.get(); const n = layout?.floors.length || 0; const f = curFloor();
+      box.style.display = s.house && n > 1 && s.mode !== 'build' ? 'flex' : 'none';
+      name.textContent = layout?.floors[f]?.name || '';
+      up.disabled = f >= n - 1; dn.disabled = f <= 0;
+      up.style.opacity = up.disabled ? '.3' : '1'; dn.style.opacity = dn.disabled ? '.3' : '1';
+    }
+    return { render };
+  })();
+
+  // ---------- emotes ----------
+  const emotes = initEmotes(ctx, host, scene,
+    (userId) => (userId === store.get().me?.id ? { holder: me.holder, av: me.av } : remotes.get(userId)),
+    () => { if (!me.transit) { me.path = []; clearPlans(); } }); // stop walking to act it out (sitting is fine)
+  ctx.provide('world.emote', (id) => emotes.play(id));
+
+  // Fit the camera so my whole room (floor + wall height) is on screen, for any screen shape and rotation.
+  const tmpR = new THREE.Vector3(), tmpU = new THREE.Vector3(), tmpP = new THREE.Vector3();
+  function fitDistance() {
+    const fwd = camDir.clone().negate();
+    tmpR.crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+    tmpU.crossVectors(tmpR, fwd);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.8; // leave room for top bar + dock
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.94;
+    let need = 1;
+    for (const x of [-1, 1]) for (const z of [-1, 1]) for (const y of [-0.5, 1.6]) {
+      tmpP.set(x * bounds.w / 2, y, z * bounds.d / 2);
+      const along = tmpP.dot(camDir);
+      need = Math.max(need, along + Math.abs(tmpP.dot(tmpR)) / tanH, along + Math.abs(tmpP.dot(tmpU)) / tanV);
+    }
+    return need;
   }
-  // At the door: it swings open, I step through, the screen fades and the next room appears.
-  function startTransit(door) {
-    me.pendingDoor = null; me.path = [];
-    door.openTarget = 1;
-    me.transit = { door, t: 0, switched: false };
-  }
-  const fade = ui.h('div', { style: { position: 'absolute', inset: '0', background: '#fff8ef', opacity: '0', pointerEvents: 'none', transition: 'opacity .25s' } });
-  host.append(fade);
-  /** Service + robot test: walk to the door of a room and go through it. Returns false if there is no such door. */
-  ctx.provide('world.goToRoom', (roomId) => { const d = doors.find((x) => x.toRoomId === roomId); if (!d) return false; goToDoor(d); return true; });
 
   // ---------- friends ----------
-  // Tap a friend: walk up to them, turn to face them and wave.
+  // Tap a friend: walk up to them, turn to face them and wave. (In another room: walk there first.)
   function goToFriend(userId) {
     const r = remotes.get(userId); if (!r || !walk) return;
+    if (r.roomId !== roomRef.id) { goTo(r.roomId, { type: 'point', p: new THREE.Vector3(r.local.x, 0, r.local.z) }); me.pendingFriend = userId; return; }
     standUp(); clearPlans(); me.run = false;
-    const p = r.holder.position;
-    const dx = me.pos.x - p.x, dz = me.pos.z - p.z, len = Math.hypot(dx, dz) || 1;
-    const spot = walk.nearestFree(p.x + dx / len * 0.9, p.z + dz / len * 0.9);
+    const dx = me.pos.x - r.local.x, dz = me.pos.z - r.local.z, len = Math.hypot(dx, dz) || 1;
+    const spot = walk.nearestFree(r.local.x + dx / len * 0.9, r.local.z + dz / len * 0.9);
     me.path = walk.pathToPoint(me.pos, spot) || [];
     me.pendingFriend = userId;
   }
@@ -410,91 +583,35 @@ export function initWorld(ctx) {
     if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${info.name}` }); }
   }
 
-  const clampToRoom = (p) => { p.x = Math.max(-bounds.w / 2 + 0.3, Math.min(bounds.w / 2 - 0.3, p.x)); p.z = Math.max(-bounds.d / 2 + 0.3, Math.min(bounds.d / 2 - 0.3, p.z)); return p; };
-
-  // keyboard (desktop): WASD / arrows to walk, Q / E to turn the camera
-  addEventListener('keydown', (e) => {
-    if (e.target.closest?.('input,textarea,select')) return;
-    const k = e.key.toLowerCase();
-    me.keys.add(k);
-    if (!e.repeat && !ui.isPanelOpen() && (k === 'q' || k === 'e')) rotateCamera(k === 'e' ? 1 : -1);
-  });
-  addEventListener('keyup', (e) => me.keys.delete(e.key.toLowerCase()));
-  addEventListener('blur', () => me.keys.clear()); // don't keep walking if the window loses focus
-
-  // ---------- camera rotation ----------
-  // The camera looks at the room from one corner. Each tap on the button turns it 90°.
-  const BASE_YAW = Math.atan2(0.62, 0.78); // the original Sims-style angle
-  let camYaw = BASE_YAW, camYawTarget = BASE_YAW;
-  const camDir = new THREE.Vector3(0.62, 0.85, 0.78).normalize(); // from the room toward the camera
-  function rotateCamera(steps = 1) { camYawTarget += steps * Math.PI / 2; }
-  function updateWalls() {
-    // show a wall only if it's on the far side (the camera is on the other side)
-    for (const wl of walls) wl.group.visible = wl.out[0] * camDir.x + wl.out[1] * camDir.z < 0.05;
-  }
-  const rotateBtn = ui.h('button', {
-    'aria-label': 'Rotate camera', title: 'Rotate camera (Q / E)',
-    style: {
-      position: 'absolute', right: '12px', bottom: 'calc(env(safe-area-inset-bottom) + 96px)',
-      width: '52px', height: '52px', borderRadius: '50%', border: 'none', fontSize: '24px',
-      background: 'rgba(255,250,243,.95)', boxShadow: 'var(--shadow, 0 4px 16px rgba(0,0,0,.15))',
-      cursor: 'pointer', display: 'none', touchAction: 'manipulation',
-    },
-    onclick: () => rotateCamera(1),
-  }, '⟳');
-  host.append(rotateBtn);
-
-  // ---------- emotes ----------
-  const emotes = initEmotes(ctx, host, scene,
-    (userId) => (userId === store.get().me?.id ? { holder: me.holder, av: me.av } : remotes.get(userId)),
-    () => { me.path = []; clearPlans(); }); // stop walking to act it out (sitting is fine)
-  ctx.provide('world.emote', (id) => emotes.play(id));
-
-  // Fit the camera so the whole room (floor + wall height) is on screen, for any screen
-  // shape and any rotation. For each corner we check how far back the camera must be.
-  const tmpR = new THREE.Vector3(), tmpU = new THREE.Vector3(), tmpP = new THREE.Vector3();
-  function fitDistance() {
-    const fwd = camDir.clone().negate();
-    tmpR.crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
-    tmpU.crossVectors(tmpR, fwd);
-    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.8; // leave room for top bar + dock
-    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.94;
-    let need = 1;
-    for (const x of [-1, 1]) for (const z of [-1, 1]) for (const y of [-0.5, 1.6]) {
-      tmpP.set(x * bounds.w / 2, y, z * bounds.d / 2); // corner, relative to the look-at point
-      const along = tmpP.dot(camDir);
-      need = Math.max(need, along + Math.abs(tmpP.dot(tmpR)) / tanH, along + Math.abs(tmpP.dot(tmpU)) / tanV);
-    }
-    return need;
-  }
-
   // ---------- sitting ----------
-  // Tap a seat: walk up to it, then sit on the free spot nearest to where you tapped.
-  // Tap the floor or press a move key to stand up. Others see it through presence (sit / sy / ry).
+  // Tap a seat: walk up to it, then sit on the free spot nearest to where you tapped (point is room-local).
   function trySit(item, point) {
     const def = ctx.use('build.itemDef')(item.kind);
     const slots = seatSlots(item, ctx.use('build.footprint')(item) || [1, 1], bounds);
-    const taken = (sl) => [...remotes.values()].some((r) => r.sit && Math.hypot(r.target.x - sl.x, r.target.z - sl.z) < 0.45);
+    const taken = (sl) => [...remotes.values()].some((r) => r.sit && r.roomId === roomRef.id && Math.hypot(r.local.x - sl.x, r.local.z - sl.z) < 0.45);
     const free = slots.filter((sl) => !taken(sl));
     if (!free.length) return ui.toast(`${def?.name || 'That seat'} is taken 😄`);
     free.sort((a, b) => Math.hypot(a.x - point.x, a.z - point.z) - Math.hypot(b.x - point.x, b.z - point.z));
-    standUp(); clearPlans(); me.run = false;
+    standUp(); me.pendingSit = null; me.pendingFriend = null; me.faceAt = null; me.run = false;
     me.pendingSit = { item, slot: free[0] };
     me.path = walk ? walk.pathToItem(me.pos, item) || [] : [];
   }
-  // Services (also used by the robot test): sit on a seat by its item id, stand up, ask if I'm sitting.
+  // Services (also used by the robot test): sit on a seat by its item id (in my room), stand up, ask if I'm sitting.
   ctx.provide('world.sitOn', (itemId) => {
-    const room = currentRoom(store.get());
-    const item = room?.items.find((i) => i.id === itemId);
+    const item = roomRef?.items.find((i) => i.id === itemId);
     const def = item && ctx.use('build.itemDef')(item.kind);
     if (!isSeat(def)) return false;
     const [fw, fd] = ctx.use('build.footprint')(item) || [1, 1];
-    const c = cellToWorld(item.x, item.z, fw, fd);
-    trySit(item, c);
+    trySit(item, cellToLocal(item.x, item.z, fw, fd));
     return true;
   });
   ctx.provide('world.standUp', () => { clearPlans(); standUp(); });
   ctx.provide('world.isSitting', () => !!me.sit);
+  /** Walk to any room of the house (through doorways and up/down the stairs). False if it doesn't exist. */
+  ctx.provide('world.goToRoom', (roomId) => (layout?.rooms.has(roomId) ? goTo(roomId, null) : false));
+  /** Which floor I'm on (0 = ground floor) and how many floors there are. */
+  ctx.provide('world.floor', () => ({ floor: curFloor(), floors: layout?.floors.length || 0, name: layout?.floors[curFloor()]?.name || '' }));
+
   function startSit() {
     const { slot, item } = me.pendingSit; me.pendingSit = null;
     if (Math.hypot(me.pos.x - slot.x, me.pos.z - slot.z) > 2.6) return ui.toast("Can't reach that seat"); // blocked in
@@ -507,15 +624,13 @@ export function initWorld(ctx) {
   function standUp() {
     if (!me.sit) return;
     const s = me.sit; me.sit = null;
-    setSitting(me.av, false); me.holder.position.y = 0;
-    const spot = walk ? walk.nearestFree(s.x + Math.sin(s.ry), s.z + Math.cos(s.ry)) : { x: s.x + Math.sin(s.ry), z: s.z + Math.cos(s.ry) }; // the spot in front of the seat
+    setSitting(me.av, false);
+    const spot = walk ? walk.nearestFree(s.x + Math.sin(s.ry), s.z + Math.cos(s.ry)) : { x: s.x + Math.sin(s.ry), z: s.z + Math.cos(s.ry) }; // in front of the seat
     me.pos.set(spot.x, 0, spot.z); me.path = [];
     sendPresence(true);
   }
 
-  // Move me to (x, z) if no furniture is there. If blocked, try sliding along it
-  // (only x, or only z), so you glide along a sofa instead of getting stuck.
-  // If I'm already standing inside furniture (someone built on me), let me walk out.
+  // Move me to (x, z) if no furniture is there. If blocked, try sliding along it (only x, or only z).
   function stepTo(x, z) {
     const lim = (v, half) => Math.max(-half + 0.3, Math.min(half - 0.3, v));
     x = lim(x, bounds.w / 2); z = lim(z, bounds.d / 2);
@@ -523,6 +638,24 @@ export function initWorld(ctx) {
     if (ok(x, z)) { me.pos.x = x; me.pos.z = z; return true; }
     if (ok(x, me.pos.z) && x !== me.pos.x) { me.pos.x = x; return true; }
     if (ok(me.pos.x, z) && z !== me.pos.z) { me.pos.z = z; return true; }
+    return false;
+  }
+  // Keyboard: walking into a doorway (or the balcony door) takes you through it.
+  function keyThroughDoor(dir) {
+    const c = localToCell(me.pos);
+    for (const link of layout.links) {
+      const mineA = link.a === roomRef.id, mineB = link.b === roomRef.id;
+      if (!mineA && !mineB) continue;
+      const cell = mineA ? link.cellA : link.cellB;
+      if (cell.x !== c.x || cell.z !== c.z) continue;
+      // doorways go right from the left room (a); the balcony door always goes right (out to the balcony)
+      const outX = link.type === 'stairs' ? 1 : mineA ? 1 : -1;
+      if (dir.x * outX < 0.6) continue;
+      if (link.type === 'stairs' && mineB && layout.links.some((l) => l.type === 'stairs' && l.a === roomRef.id)) continue; // prefer going up
+      me.route = [{ link, from: roomRef.id, to: mineA ? link.b : link.a }]; me.goal = null;
+      startTransit(me.route[0]);
+      return true;
+    }
     return false;
   }
   // Turn smoothly instead of snapping (takes the short way round).
@@ -535,33 +668,35 @@ export function initWorld(ctx) {
   // ---------- loop ----------
   const clock = new THREE.Clock();
   const camTarget = new THREE.Vector3();
+  const focus = new THREE.Vector3();
   const SPEED = 3.2;
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
-    // keyboard: W walks AWAY from the camera, whatever way the camera is turned. Shift = run.
+    if (!layout || !roomRef) { renderer.render(scene, camera); return; }
     const k = me.keys;
     const fwdKey = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
     const sideKey = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     let moving = false;
     if (me.transit) {
-      // walking through a door: step into the doorway, fade out, switch room
-      const tr = me.transit; tr.t += dt;
-      if (tr.t > 0.2) { me.pos.x += tr.door.out[0] * dt * 1.6; me.pos.z += tr.door.out[1] * dt * 1.6; moving = true; turnToward(me.holder, Math.atan2(tr.door.out[0], tr.door.out[1]), dt); }
-      if (tr.t > 0.25) fade.style.opacity = '1';
-      if (tr.t > 0.55 && !tr.switched) {
-        tr.switched = true;
-        arrivingFrom = roomRef?.id;
-        bus.emit('room:goto', { roomId: tr.door.toRoomId }); // spawn() puts me at the door back
-        setTimeout(() => { fade.style.opacity = '0'; }, 60);
-        me.transit = null;
+      // walking through a doorway or round the spiral staircase: follow the exact points
+      const tr = me.transit; const p = me.holder.position;
+      let step = SPEED * (tr.stairs ? 0.75 : 1) * dt;
+      while (step > 0 && tr.i < tr.pts.length) {
+        const next = tr.pts[tr.i]; const d = next.clone().sub(p); const len = d.length();
+        if (len <= step) { p.copy(next); tr.i++; step -= len; }
+        else { p.addScaledVector(d, step / len); step = 0; if (Math.hypot(d.x, d.z) > 0.01) turnToward(me.holder, Math.atan2(d.x, d.z), dt); }
       }
+      moving = true;
+      if (tr.i >= tr.pts.length) finishTransit();
     } else if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
-      const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); // forward on the floor
+      // keyboard: W walks AWAY from the camera, whatever way the camera is turned. Shift = run.
+      const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
       const kv = new THREE.Vector3(fx * fwdKey - fz * sideKey, 0, fz * fwdKey + fx * sideKey).normalize();
       me.path = []; clearPlans(); standUp();
       me.run = k.has('shift');
       const sp = SPEED * (me.run ? 1.8 : 1);
       if (stepTo(me.pos.x + kv.x * sp * dt, me.pos.z + kv.z * sp * dt)) moving = true;
+      else keyThroughDoor(kv);
       turnToward(me.holder, Math.atan2(kv.x, kv.z), dt);
     } else {
       // press and hold: keep re-planning toward the finger
@@ -570,7 +705,6 @@ export function initWorld(ctx) {
         if (holdRepath <= 0) { holdRepath = 0.15; me.path = walk.pathToPoint(me.pos, holdPoint) || []; }
       }
       if (me.path.length) {
-        // tap-to-walk: follow the path point by point
         const next = me.path[0];
         const dx = next.x - me.pos.x, dz = next.z - me.pos.z, len = Math.hypot(dx, dz);
         const step = SPEED * (me.run ? 1.8 : 1) * dt;
@@ -582,22 +716,18 @@ export function initWorld(ctx) {
     if (!me.path.length && !moving && !me.transit) {
       // arrived: do what I came for
       if (me.pendingSit) startSit();
-      else if (me.pendingDoor) {
-        const dr = me.pendingDoor;
-        if (Math.hypot(me.pos.x - dr.spot.x, me.pos.z - dr.spot.z) < 1.2 || !walk?.pathToCell(me.pos, dr.cell)) startTransit(dr);
-        else me.pendingDoor = null;
-      } else if (me.pendingFriend) {
+      else if (me.route.length) startTransit(me.route[0]);
+      else if (me.pendingFriend) {
         const r = remotes.get(me.pendingFriend); me.pendingFriend = null;
-        if (r) { me.faceAt = r.holder.position.clone(); emotes.play('wave'); }
+        if (r && r.roomId === roomRef.id) { me.faceAt = new THREE.Vector3(r.local.x, 0, r.local.z); emotes.play('wave'); }
       }
       if (me.faceAt && !me.sit) turnToward(me.holder, Math.atan2(me.faceAt.x - me.pos.x, me.faceAt.z - me.pos.z), dt);
       if (!holding) me.run = false;
     }
-    me.holder.position.copy(me.pos);
-    if (me.sit) me.holder.position.y = me.sit.y;
+    if (!me.transit) placeHolder();
     if (me.av) animateAvatar(me.av, dt, moving, me.run);
-    if (moving) sendPresence();
-    else if (me.wasMoving) sendPresence(true);
+    if (moving && !me.transit) sendPresence();
+    else if (me.wasMoving && !me.transit) sendPresence(true);
     me.wasMoving = moving;
 
     for (const r of remotes.values()) {
@@ -605,14 +735,13 @@ export function initWorld(ctx) {
       const d = r.target.clone().sub(r.holder.position);
       const dist = d.length();
       const mv = dist > 0.03;
-      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); if (!r.sit && dist > 0.05) turnToward(r.holder, Math.atan2(d.x, d.z), dt); }
+      if (mv) { r.holder.position.lerp(r.target, Math.min(1, dt * 8)); if (!r.sit && Math.hypot(d.x, d.z) > 0.05) turnToward(r.holder, Math.atan2(d.x, d.z), dt); }
       if (r.sit) turnToward(r.holder, r.ry, dt);
       animateAvatar(r.av, dt, mv && !r.sit, dist > 0.6);
     }
 
-    // doors, tap marker, bouncing furniture, pet
-    updateDoors(doors, dt, camDir);
-    updateWindows(windows, camDir);
+    // walls, tap marker, bouncing furniture, pet, light
+    updateVisibility(false);
     if (markerT < 1) { markerT = Math.min(1, markerT + dt * 1.4); marker.material.opacity = 0.9 * (1 - markerT); marker.scale.setScalar(1 + markerT * 0.8); }
     for (const [id, left] of bounces) {
       const mesh = itemMeshes.find((x) => x.userData.itemId === id);
@@ -624,36 +753,60 @@ export function initWorld(ctx) {
     lightCheck -= dt;
     if (lightCheck <= 0) { lightCheck = 30; applyDaylight(); } // the light follows the clock
 
-    // camera: smooth turn toward the chosen angle, then fit the room on screen.
+    // camera: smooth turn toward the chosen angle; look at my room (or at me on the stairs).
     camYaw += (camYawTarget - camYaw) * Math.min(1, dt * 7);
     camDir.set(Math.sin(camYaw) * 0.996, 0.85, Math.cos(camYaw) * 0.996).normalize();
-    updateWalls();
-    // At normal zoom the camera looks at the room centre (the whole room fits).
-    // Zoomed in, it follows me more, so I never walk off screen.
-    const follow = 0.15 + 0.85 * Math.min(1, Math.max(0, (1 - zoom) / (1 - ZOOM_MIN)));
-    camTarget.lerp(new THREE.Vector3(me.pos.x * follow, 0.5, me.pos.z * follow), Math.min(1, dt * 4));
+    // At normal zoom the camera looks at the room centre (the whole room fits). Zoomed in, it follows me.
+    const follow = me.transit ? 1 : 0.15 + 0.85 * Math.min(1, Math.max(0, (1 - zoom) / (1 - ZOOM_MIN)));
+    const c = roomCenter(roomRef.id);
+    focus.set(c.x + (me.holder.position.x - c.x) * follow, (me.transit ? me.holder.position.y : c.y) + 0.5, c.z + (me.holder.position.z - c.z) * follow);
+    camTarget.lerp(focus, Math.min(1, dt * (me.transit ? 6 : 4)));
     const dist = fitDistance() * zoom;
     camera.position.copy(camTarget).addScaledVector(camDir, dist);
     camera.lookAt(camTarget);
+    // the sun's shadows follow the camera, so the whole building can have shadows
+    sun.position.copy(camTarget).add(new THREE.Vector3(6, 12, 8)); sun.target.position.copy(camTarget);
     renderer.render(scene, camera);
   });
 
   // ---------- react to state ----------
+  const fade = ui.h('div', { style: { position: 'absolute', inset: '0', background: '#fff8ef', opacity: '0', pointerEvents: 'none', transition: 'opacity .25s' } });
+  host.append(fade);
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
     if (s.house !== prev.house) pet.setHouse(s.house); // before the room, so spawn() can place the pet
-    const room = currentRoom(s);
-    if (room && (room !== roomRef)) {
-      const changedRoom = !roomRef || room.id !== roomRef.id;
-      buildRoom(room);
-      if (changedRoom) spawn();
+    if (!s.house) {
+      if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); }
+    } else {
+      const room = currentRoom(s);
+      const firstTime = !layout;
+      if (s.house !== prev.house || !layout) {
+        // the house changed (or we just came in): rebuild the building, keep my spot if my room is still there
+        const keep = !firstTime && room && roomRef?.id === room.id;
+        buildHouse(s.house);
+        if (room) {
+          enterRoom(room);
+          if (keep) {
+            if (me.path.length && walk) me.path = walk.pathToPoint(me.pos, me.path[me.path.length - 1]) || []; // furniture moved: re-plan
+            if (me.sit && !room.items.some((i) => i.id === me.sit.item)) standUp(); // my seat was removed
+            if (walk && !walk.isFreeAt(me.pos.x, me.pos.z)) { const f = walk.nearestFree(me.pos.x, me.pos.z); me.pos.set(f.x, 0, f.z); }
+          } else spawn();
+        }
+      } else if (room && room.id !== roomRef?.id) {
+        enterRoom(room);
+        if (!movingSelf) { // a jump (room tabs, Pip's tour, the robot): a quick fade, then appear at the door
+          fade.style.transition = 'none'; fade.style.opacity = '1';
+          requestAnimationFrame(() => { fade.style.transition = 'opacity .35s'; fade.style.opacity = '0'; });
+          spawn();
+        }
+      }
     }
-    if (!room && roomGroup) { scene.remove(roomGroup); roomGroup = null; roomRef = null; }
     if (s.players !== prev.players) syncRemotes();
-    if (s.mode === 'build' && prev.mode !== 'build') { clearPlans(); standUp(); emotes.close(); } // building: get off the sofa
-    if (grid && s.mode !== prev.mode) grid.visible = s.mode === 'build';
+    if (s.mode === 'build' && prev.mode !== 'build') { clearPlans(); standUp(); emotes.close(); me.transit = null; } // building: get off the sofa
+    if (s.mode !== prev.mode) updateVisibility(true);
     rotateBtn.style.display = s.house ? 'block' : 'none';
     emotes.button.style.display = s.house && s.mode !== 'build' ? 'block' : 'none';
+    floorUi.render();
   });
 
   bus.on('room:goto', ({ roomId }) => { store.set({ roomId }); });

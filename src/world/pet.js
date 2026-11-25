@@ -64,7 +64,7 @@ function heartSprite() {
  */
 export function createPet(scene) {
   let mesh = null, kind = null, name = 'Mochi', houseId = null;
-  const pos = new THREE.Vector3(); let path = []; let state = 'idle'; let timer = 1; let hop = 0;
+  const pos = new THREE.Vector3(); const origin = new THREE.Vector3(); let path = []; let state = 'idle'; let timer = 1; let hop = 0;
   const hearts = [];
   const SPEED = 1.6;
 
@@ -77,19 +77,20 @@ export function createPet(scene) {
     scene.add(mesh);
   }
 
-  /** Put the pet somewhere free in a new room (near the given spot). */
-  function place(walk, near) {
+  /** Put the pet somewhere free in a new room (near the given spot). org = where the room's centre is in the building. */
+  function place(walk, near, org) {
     if (!mesh || !walk) return;
+    if (org) origin.copy(org);
     const p = walk.nearestFree((near?.x ?? 0) + 1.2, (near?.z ?? 0) + 0.4);
     pos.set(p.x, 0, p.z); path = []; state = 'idle'; timer = 1.5;
-    mesh.position.copy(pos);
+    mesh.position.copy(pos).add(origin);
   }
 
   function pet() { // tapped!
     if (!mesh) return null;
     hop = 1; state = 'idle'; path = []; timer = 2;
     for (let i = 0; i < 3; i++) {
-      const sp = heartSprite(); sp.position.set(pos.x + (i - 1) * 0.2, 0.7, pos.z); scene.add(sp);
+      const sp = heartSprite(); sp.position.set(origin.x + pos.x + (i - 1) * 0.2, origin.y + 0.7, origin.z + pos.z); scene.add(sp);
       hearts.push({ sp, t: -i * 0.15 });
     }
     return { name, kind };
@@ -143,7 +144,7 @@ export function createPet(scene) {
     u.head.rotation.x = lying ? 0.3 : 0;
     for (const l of u.legs) l.visible = !lying;
     hop = Math.max(0, hop - dt * 2.2);
-    mesh.position.set(pos.x, Math.sin(hop * Math.PI) * 0.35, pos.z);
+    mesh.position.set(origin.x + pos.x, origin.y + Math.sin(hop * Math.PI) * 0.35, origin.z + pos.z);
   }
 
   return { setHouse, place, update, pet, get name() { return name; }, get kind() { return kind; }, get mesh() { return mesh; } };
