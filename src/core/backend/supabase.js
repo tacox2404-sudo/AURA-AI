@@ -192,8 +192,13 @@ export function createSupabaseBackend(url, anonKey) {
         lastPosSent = now;
         ch.send({ type: 'broadcast', event: 'pos', payload: { userId: me.id, roomId: mine.roomId, x: mine.x, z: mine.z } });
       }
-      ch.subscribe((status) => { if (status === 'SUBSCRIBED') { ready = true; trackInfo(); sendPos(true); } });
-      const heartbeat = setInterval(() => sendPos(true), 3000); // late joiners learn where everyone stands
+      // SUBSCRIBED also fires after a reconnect (phone woke up, wifi came back): announce myself again.
+      ch.subscribe((status) => { if (status === 'SUBSCRIBED') { ready = true; lastInfoKey = ''; trackInfo(); sendPos(true); } });
+      let beats = 0;
+      const heartbeat = setInterval(() => {
+        sendPos(true); // late joiners learn where everyone stands
+        if (++beats % 5 === 0) { lastInfoKey = ''; trackInfo(); } // every ~15s re-announce who I am, in case a reconnect lost it
+      }, 3000);
 
       return {
         updatePresence(p) { mine = p; trackInfo(); sendPos(false); },
