@@ -286,3 +286,41 @@ language sql security definer stable set search_path = public as $$
 $$;
 
 grant execute on function send_friend_request(text), respond_friend_request(uuid, boolean), remove_friend(uuid), list_friends() to authenticated;
+
+-- ---------- visiting friends' houses ----------
+-- A house owner can switch on "Friends can visit" (stored as data.friendsCanVisit = true, off by default).
+-- Then accepted friends of the OWNER can see the house in their Friends page and join it as a guest
+-- (guests can look around, chat and play, but not build; the owner can remove them any time).
+
+-- Houses my friends have opened for visits (and that I'm not already in).
+create or replace function list_friend_houses()
+returns table (house_id uuid, name text, type text, vibe text, owner_id uuid, owner_name text)
+language sql security definer stable set search_path = public as $$
+  select h.id, h.name, h.type, h.vibe, h.owner_id, p.username
+  from houses h
+  join profiles p on p.id = h.owner_id
+  where h.data->>'friendsCanVisit' = 'true'
+    and exists (select 1 from friends f where f.status = 'accepted'
+                and ((f.requester = auth.uid() and f.addressee = h.owner_id) or (f.requester = h.owner_id and f.addressee = auth.uid())))
+    and not exists (select 1 from house_members m where m.house_id = h.id and m.user_id = auth.uid());
+$$;
+
+-- Join a friend's open house as a guest. Returns { house_id, role }.
+create or replace function visit_house(p_house uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare h houses; uname text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select * into h from houses where id = p_house;
+  if h.id is null or coalesce(h.data->>'friendsCanVisit', '') <> 'true' then raise exception 'This house is not open for visits'; end if;
+  if not exists (select 1 from friends f where f.status = 'accepted'
+                 and ((f.requester = auth.uid() and f.addressee = h.owner_id) or (f.requester = h.owner_id and f.addressee = auth.uid()))) then
+    raise exception 'Only friends of the owner can visit';
+  end if;
+  select username into uname from profiles where id = auth.uid();
+  insert into house_members (house_id, user_id, role, name) values (h.id, auth.uid(), 'guest', coalesce(uname, 'visitor'))
+    on conflict (house_id, user_id) do nothing; -- already a member: keep their role
+  return json_build_object('house_id', h.id, 'role', (select role from house_members where house_id = h.id and user_id = auth.uid()));
+end; $$;
+
+grant execute on function list_friend_houses(), visit_house(uuid) to authenticated;
