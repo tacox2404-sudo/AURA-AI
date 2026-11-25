@@ -135,6 +135,29 @@ export function createLocalBackend() {
       write('op:houses', all);
     },
 
+    // ---------- visiting friends' houses (same rules as the SQL functions) ----------
+    // An owner opens a house with house.friendsCanVisit = true. Accepted friends of the OWNER can then
+    // see it and join as a guest (look around, chat, play; no building).
+    async listFriendHouses() {
+      const me = actingUser();
+      const all = users();
+      const friendIds = new Set(read('op:friends', []).filter((f) => f.status === 'accepted' && (f.from === me || f.to === me)).map((f) => (f.from === me ? f.to : f.from)));
+      return Object.values(houses())
+        .filter((h) => h.friendsCanVisit && friendIds.has(h.ownerId) && !h.members?.[me])
+        .map((h) => ({ id: h.id, name: h.name, type: h.type, vibe: h.vibe, ownerId: h.ownerId, ownerName: all[h.ownerId]?.username || 'a friend' }));
+    },
+    async visitHouse(houseId) {
+      const me = actingUser();
+      const all = houses();
+      const house = all[houseId];
+      if (!house || !house.friendsCanVisit) throw new Error('This house is not open for visits');
+      const isFriend = read('op:friends', []).some((f) => f.status === 'accepted' && ((f.from === me && f.to === house.ownerId) || (f.from === house.ownerId && f.to === me)));
+      if (!isFriend) throw new Error('Only friends of the owner can visit');
+      if (!house.members[me]) house.members[me] = { role: 'guest', name: users()[me]?.username || 'visitor' }; // already a member: keep their role
+      write('op:houses', all);
+      return { house, role: house.members[me].role };
+    },
+
     // ---------- friends (same rules as the SQL functions in supabase/schema.sql) ----------
     // A request goes from one user to another and stays 'pending' until accepted.
     // If both people ask each other, they become friends right away.

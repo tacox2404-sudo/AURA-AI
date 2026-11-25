@@ -105,6 +105,16 @@ export function createSupabaseBackend(url, anonKey) {
       must(await sb.rpc('leave_house', { p_house: houseId }));
     },
 
+    // ---------- visiting friends' houses (the rules live in the SQL functions) ----------
+    async listFriendHouses() {
+      const rows = must(await sb.rpc('list_friend_houses')) || [];
+      return rows.map((r) => ({ id: r.house_id, name: r.name, type: r.type, vibe: r.vibe, ownerId: r.owner_id, ownerName: r.owner_name }));
+    },
+    async visitHouse(houseId) {
+      const res = must(await sb.rpc('visit_house', { p_house: houseId }));
+      return { house: await this.getHouse(res.house_id), role: res.role };
+    },
+
     // ---------- friends (the rules live in the SQL functions in supabase/schema.sql) ----------
     async sendFriendRequest(username) { return must(await sb.rpc('send_friend_request', { p_username: username })); }, // 'sent' | 'accepted'
     async respondFriendRequest(userId, accept) { must(await sb.rpc('respond_friend_request', { p_user: userId, p_accept: !!accept })); },

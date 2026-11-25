@@ -19,6 +19,7 @@ House = {
   rooms: Room[],
   streak: { count, lastDay: 'YYYY-MM-DD' },
   cities: string[],          // for weather + clocks
+  friendsCanVisit?: boolean, // owner switch (default off): accepted friends of the owner may join as guests
 }
 Room = { id, name, vibe, theme: { floor, wall, accent, wood }, size: [w, d], items: Item[] }
 Item = { id, kind /* catalog id */, x, z /* grid cell */, rot /* 0-3 */, activity?, data?: { url?, label?, key? } }
@@ -78,6 +79,7 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 `setMemberRole(houseId, userId, 'housemate' | 'guest') -> House`, `removeMember(houseId, userId) -> House`, `leaveHouse(houseId)`,
 `sendFriendRequest(username) -> 'sent' | 'accepted'`, `respondFriendRequest(userId, accept)`, `removeFriend(userId)`,
 `listFriends() -> [{ id, username, avatar, status: 'friend' | 'incoming' | 'outgoing' }]`,
+`listFriendHouses() -> [{ id, name, type, vibe, ownerId, ownerName }]`, `visitHouse(houseId) -> { house, role }`,
 `listMessages`, `sendMessage`, `getState`, `setState`, `addPoints`, `listPoints`,
 `connect(houseId, me, { onPresence, onEvent }) -> { updatePresence, send, leave }`,
 `generateRoom(prompt, catalogIds, activityIds)`, `linkPreview(url)`.
@@ -88,5 +90,8 @@ send the existing `house-updated` live event so everyone reloads.
 
 Friends: a request stays 'pending' until the other person accepts; if both people ask each other they become
 friends right away. Declining or removing deletes the row. `removeFriend` also cancels a request you sent.
+
+Visiting: houses stay private unless the owner sets `house.friendsCanVisit`. Then accepted friends of the OWNER can
+`listFriendHouses()` and `visitHouse(id)`, which joins them as a guest (an existing member keeps their role).
 
 Changing this API means changing BOTH `local.js` and `supabase.js` (lead only).

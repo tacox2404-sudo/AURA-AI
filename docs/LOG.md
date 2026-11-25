@@ -22,3 +22,4 @@ Newest at the bottom. 2-4 lines per session: date, area, what changed, what's ne
 - 2026-11-25 · core · (docs/prompts/join-team.md = paste-in prompt to move a fork clone onto the team repo.) Teammates are independent: npm run ship turns on auto-merge, npm run status follows the PR (running/merged/failed, no login), instructions updated everywhere. Repo allows auto-merge. Next: teammates accept invites.
 - 2026-11-25 · core · join-team prompt: clearer 'accept the invitation' step (open the page, what to click, wrong-account and expired cases).
 - 2026-11-25 · social · schema.sql: list_friend_houses + visit_house (friends of an owner can visit houses the owner opened, as guests). Next: backend API (core), then the toggle and Visit list.
+- 2026-11-25 · core · Backend API: listFriendHouses, visitHouse (demo + Supabase), house.friendsCanVisit in CONTRACTS. Next: owner switch + Visit list (social).
