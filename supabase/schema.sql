@@ -145,3 +145,12 @@ drop policy if exists "points read" on points;
 create policy "points read" on points for select using (is_member(house_id));
 drop policy if exists "points write" on points;
 create policy "points write" on points for insert with check (is_member(house_id) and user_id = auth.uid());
+
+-- ---------- API access ----------
+-- New Supabase projects don't let the API touch new tables by default, so give signed-in
+-- players access. Row level security above still decides which rows each player can see.
+-- (Not-signed-in visitors get no table access on purpose.)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+grant execute on all functions in schema public to authenticated;
