@@ -8,7 +8,9 @@
     "preview": "vite preview --host",
     "smoke": "node tests/smoke.mjs",
     "scope": "node scripts/check-scope.mjs",
-    "check": "npm run build && npm run smoke"
+    "check": "npm run build && npm run smoke",
+    "start": "node scripts/start-task.mjs",
+    "ship": "node scripts/ship.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",

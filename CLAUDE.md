@@ -38,26 +38,22 @@ perfect-and-unfinished. We go broad first, then deep.
 7. **Before finishing:** run `npm run build` and fix every error. Then add 2-4 lines to
    `docs/LOG.md` (date, area, what changed, what's next).
 
-## Git workflow: everyone clones the team repo (do it for the user, explain each step briefly)
+## Team workflow (MANDATORY: read docs/WORKFLOW.md; every Claude follows it)
 
 Everyone (lead included) clones `tacox2404-sudo/AURA-AI` directly and pushes short-lived
-branches to it, so every team can read the others' work. Only the lead merges into `main`
-(enforced by a branch ruleset on GitHub), so nobody can break the live game by accident.
+`<area>/<task>` branches to it, so every team can read the others' work. Only the lead merges
+into `main` (a GitHub ruleset enforces it: pull request + green checks, no force pushes).
 
-- First time: `git clone https://github.com/tacox2404-sudo/AURA-AI.git` (the lead invites
-  teammates as collaborators first).
-- Start every session: `git checkout main && git pull`, then
-  `git checkout -b <area>/<short-task>` (example: `world/walk-animation`).
-  The area prefix is required: world/, build/, social/, activities/ (lead: core/).
-- Keep branches short (merged within a day or two). No long-lived team branches: they drift apart.
-- Commit small steps with clear messages. Push often with `git push -u origin <branch>`.
-- To read another team's work: merged work arrives with `git pull` on main; work in
-  progress with `git fetch` then `git checkout <their-branch>` (look, don't edit).
-- Before the pull request: `npm run build`, `npm run smoke`, `npm run scope`. All must pass.
-- Finish: open a pull request into `main`:
-  `gh pr create --base main --title "..." --body "..."`
-  (or the "Compare & pull request" button on GitHub). Fill in the PR template.
-- Update your branch if main moved: `git pull origin main`.
+1. **Start:** `npm run start -- <area>/<short-task>` (example: `world/walk-animation`). It
+   fixes a fork remote, pulls the latest `main` and creates your branch. Never edit on `main`.
+2. **Build** the feature inside your area's folder, explain it in plain words, test with `npm run dev`.
+3. **Finish:** add 2-4 lines to `docs/LOG.md`, commit, then `npm run ship`. It runs build, scope and
+   smoke, pushes your branch and opens the pull request. Give the user the PR link and a one-line
+   message for the team chat.
+4. Branches stay short (1-2 days). To read other teams' work: `git pull` (merged) or
+   `git fetch` then `git checkout <their-branch>` (look, don't edit).
+5. Never force-push, never push to `main`, never skip the checks.
+6. Do these steps FOR the user. They should only have to think about the feature.
 
 ## Safety nets (don't fight them)
 
@@ -78,6 +74,7 @@ branches to it, so every team can read the others' work. Only the lead merges in
 - `npm run smoke` plays the game automatically (after a build) and fails on any crash.
   First time only: `npx playwright install chromium`.
 - `npm run scope` checks your branch only changed your area's files.
+- `npm run start -- <area>/<task>` begins a task; `npm run ship` finishes it (checks + push + PR).
 - `npm run check` = build + smoke.
 - Two players locally: open two browser windows, create two accounts (demo mode syncs tabs).
 

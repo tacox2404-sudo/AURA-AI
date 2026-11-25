@@ -40,7 +40,7 @@ Your Day 1 task is on the [Issues board](https://github.com/tacox2404-sudo/AURA-
    npm install
    claude
    ```
-4. Open your prompt file above, copy everything under the line, and paste it into Claude.
+4. Read [WORKFLOW.md](WORKFLOW.md) (1 page). Then open your prompt file above, copy everything under the line, and paste it into Claude.
    Claude reads the repo and the team rules, runs the game for you, and plans your first goal.
 5. Next days: start a new chat with [continue.md](prompts/continue.md).
 

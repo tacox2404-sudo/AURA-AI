@@ -30,11 +30,10 @@ I own **Activities**: the games and the real-life features: gallery, calendar, w
 - [ ] Day 5: bug fixing; every activity works on a phone and syncs to others.
 
 ## How every session works
-1. Sync: `git checkout main && git pull`.
-2. Branch: `git checkout -b activities/<short-task>` (the `activities/` prefix is required).
+1. Start: `npm run start -- activities/<short-task>` (syncs main and makes the branch; the `activities/` prefix is required).
 3. Build the rough version first, make it work end to end, then polish. It must work on a phone screen AND in demo mode (no Supabase).
 4. After each change, tell me exactly what to tap to test it.
-5. Before pushing, run `npm run build`, `npm run smoke` and `npm run scope`. Fix anything red.
-6. Add 2-4 lines to docs/LOG.md, commit, `git push -u origin <branch>`, then open a pull request: `gh pr create --base main` with the template filled in. Give me the PR link and a one-line message for the team chat.
+5. Add 2-4 lines to docs/LOG.md, commit, then run `npm run ship` (build + scope + smoke, push, opens the pull request). Fix anything red and run it again.
+6. Read docs/WORKFLOW.md first: it is mandatory. Give me the PR link and a one-line message for the team chat.
 
 When I start a new chat later, I'll say "continue Activities". You'll re-read CLAUDE.md and docs/LOG.md, pull main, and suggest the next goal.

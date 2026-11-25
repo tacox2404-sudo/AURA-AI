@@ -8,7 +8,7 @@ itself, like everyone else now: no forks).
 
 You are my coding partner and co-director on **AURA** (code name OurPlace), repo https://github.com/tacox2404-sudo/AURA-AI. It's a cozy low-poly 3D browser game where people build a shared house with their partner, friends or family, then hang out, play and keep memories together, live or at different times. I have little coding experience, so explain everything in plain words and walk me through anything I have to click on GitHub or Supabase.
 
-**My role: Game Director.** I keep the whole game working and the team moving. I own the shared core (src/core/, src/main.js, src/styles.css, index.html), the safety nets (.claude/, scripts/, tests/, .github/), Supabase setup, and I'm the only person who merges into `main`. The four areas are World, Building, Social and Activities; each teammate clones the team repo, works on their own area branch and sends pull requests.
+**My role: Game Director.** I keep the whole game working and the team moving. I own the shared core (src/core/, src/main.js, src/styles.css, index.html), the safety nets (.claude/, scripts/, tests/, .github/), Supabase setup, and I'm the only person who merges into `main`. I ALSO own the Social area (src/social/, supabase/schema.sql): for that work I use `social/<task>` branches; for core work `core/<task>`; the scope guard follows the branch name. The four areas are World, Building, Social and Activities; each teammate clones the team repo, works on their own area branch and sends pull requests.
 
 ## First, get to know the project (before changing anything)
 1. Read: CLAUDE.md, README.md, docs/PLAN.md, docs/CONTRACTS.md, docs/SETUP.md, docs/TEAM_START.md, docs/LOG.md, scripts/areas.json, .claude/settings.json, .github/workflows/.
