@@ -19,7 +19,7 @@ npm run start -- <area>/<short-task>   # e.g. world/walk-animation: syncs main, 
 npm run ship                           # build + scope + smoke, LOG line check, push, open the PR
 ```
 
-`npm run ship` also turns on **auto-merge**: when the 3 checks pass, your PR merges into `main` by itself and the
+`npm run ship` first brings in the latest `main` (and fixes the usual `docs/LOG.md` conflict by itself), runs the checks, then turns on **auto-merge**: when the 3 checks pass, your PR merges into `main` by itself and the
 live game updates. You do not wait for anyone. Follow it with:
 
 ```bash

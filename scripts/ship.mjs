@@ -3,6 +3,7 @@
 // pushes your branch to the team repo and opens the pull request.
 import { execSync } from 'node:child_process';
 import { areaFromBranch } from './scope.mjs';
+import { syncWithMain } from './sync-main.mjs';
 
 const TEAM = 'tacox2404-sudo/AURA-AI';
 const out = (c) => execSync(c, { stdio: 'pipe' }).toString().trim();
@@ -13,6 +14,8 @@ const branch = out('git rev-parse --abbrev-ref HEAD');
 if (!areaFromBranch(branch)) fail(`You are on "${branch}". Start work with: npm run start -- <area>/<short-task>`);
 if (out('git status --porcelain')) fail('You have uncommitted changes. Commit them first (ask Claude to), then run this again.');
 
+console.log('0/4 syncing with main');
+try { syncWithMain(); } catch (e) { fail(e.message); }
 console.log('1/4 build'); show('npm run build');
 console.log('2/4 scope'); show('npm run scope');
 console.log('3/4 smoke test'); show('npm run smoke');
