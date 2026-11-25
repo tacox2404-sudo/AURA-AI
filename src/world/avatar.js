@@ -104,6 +104,6 @@ export function nameTag(text, color = '#ffffff') {
   g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 32);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-  sp.scale.set(1.6, 0.4, 1); sp.position.y = 2.5; sp.renderOrder = 10;
+  sp.scale.set(1.6, 0.4, 1); sp.position.y = 1.8; sp.renderOrder = 10;
   return sp;
 }

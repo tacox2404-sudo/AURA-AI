@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { buildAvatar, animateAvatar, nameTag, randomAppearance } from './avatar.js';
 import { initWardrobe } from './wardrobe.js';
+import { makeWalkGrid } from './walkGrid.js';
 import { currentRoom } from '../core/store.js';
 
 export function initWorld(ctx) {
@@ -40,6 +41,8 @@ export function initWorld(ctx) {
   let roomGroup = null; let roomRef = null; let floorMesh = null; let grid = null;
   const itemMeshes = []; // for tapping
   let bounds = { w: 8, d: 8 };
+  let walk = null; // walk grid: where furniture is, and paths around it (walkGrid.js)
+  let walls = [];  // { group, out: [x, z] } - the side of the room each wall is on
 
   const cellToWorld = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
   const worldToCell = (p) => ({ x: Math.floor(p.x + bounds.w / 2), z: Math.floor(p.z + bounds.d / 2) });
@@ -59,14 +62,24 @@ export function initWorld(ctx) {
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter;
     floorMesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), [null, null, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }), null, null, null].map((x) => x || new THREE.MeshStandardMaterial({ color: c2 })));
     floorMesh.position.y = -0.1; floorMesh.receiveShadow = true; roomGroup.add(floorMesh);
-    // two cut-away walls (back and left), like The Sims
+    // Four walls, but only the two FAR from the camera are shown (cut-away, like The Sims).
+    // When you rotate the camera, updateWalls() swaps which ones are visible.
     const wallMat = new THREE.MeshStandardMaterial({ color: t.wall, roughness: 0.95 });
     const trim = new THREE.MeshStandardMaterial({ color: new THREE.Color(t.wall).offsetHSL(0, 0, -0.18) });
-    const back = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 2.6, 0.2), wallMat); back.position.set(0, 1.3, -d / 2 - 0.1); back.receiveShadow = true;
-    const left = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, d), wallMat); left.position.set(-w / 2 - 0.1, 1.3, 0); left.receiveShadow = true;
-    const b1 = new THREE.Mesh(new THREE.BoxGeometry(w + 0.22, 0.18, 0.24), trim); b1.position.set(0, 0.09, -d / 2 - 0.1);
-    const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, d), trim); b2.position.set(-w / 2 - 0.1, 0.09, 0);
-    roomGroup.add(back, left, b1, b2);
+    walls = [];
+    const addWall = (out, len, x, z, alongX) => {
+      const g = new THREE.Group(); g.position.set(x, 0, z);
+      const wall = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len, 2.6, 0.2) : new THREE.BoxGeometry(0.2, 2.6, len), wallMat);
+      wall.position.y = 1.3; wall.receiveShadow = true;
+      const base = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len + 0.02, 0.18, 0.24) : new THREE.BoxGeometry(0.24, 0.18, len + 0.02), trim);
+      base.position.y = 0.09;
+      g.add(wall, base); roomGroup.add(g); walls.push({ group: g, out });
+    };
+    addWall([0, -1], w + 0.4, 0, -d / 2 - 0.1, true);  // back
+    addWall([0, 1], w + 0.4, 0, d / 2 + 0.1, true);    // front
+    addWall([-1, 0], d, -w / 2 - 0.1, 0, false);       // left
+    addWall([1, 0], d, w / 2 + 0.1, 0, false);         // right
+    walk = makeWalkGrid(room, ctx.use('build.footprint'), ctx.use('build.itemDef'));
     // items
     for (const item of room.items) {
       const mesh = ctx.use('build.itemMesh')(item, t);
@@ -83,11 +96,15 @@ export function initWorld(ctx) {
     grid.visible = store.get().mode === 'build';
     roomGroup.add(grid);
     scene.add(roomGroup);
+    updateWalls();
+    // furniture may have moved: re-plan my walk around the new layout
+    if (me.path.length) me.path = walk.pathToPoint(me.pos, me.path[me.path.length - 1]) || [];
     syncRemotes();
   }
 
   // ---------- my avatar ----------
-  const me = { holder: new THREE.Group(), av: null, target: null, pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set() };
+  // path = list of {x, z} points still to walk through (from the walk grid)
+  const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), moving: false, keys: new Set() };
   scene.add(me.holder);
   function rebuildMyAvatar() {
     const s = store.get();
@@ -97,7 +114,9 @@ export function initWorld(ctx) {
   }
   function spawn() {
     me.pos.set((Math.random() - 0.5) * Math.min(4, bounds.w - 2), 0, bounds.d / 2 - 1 - Math.random());
-    me.target = null;
+    const free = walk ? walk.nearestFree(me.pos.x, me.pos.z) : me.pos; // never spawn inside furniture
+    me.pos.set(free.x, 0, free.z);
+    me.path = [];
     me.holder.position.copy(me.pos);
     sendPresence(true);
   }
@@ -137,7 +156,7 @@ export function initWorld(ctx) {
     g.fillStyle = '#222'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(msg, 256, 50);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-    sp.scale.set(2.6, 0.65, 1); sp.position.y = 3.1; sp.renderOrder = 11;
+    sp.scale.set(2.6, 0.65, 1); sp.position.y = 2.4; sp.renderOrder = 11;
     holder.add(sp); setTimeout(() => holder.remove(sp), 4500);
   }
   bus.on('chat:message', (m) => {
@@ -158,14 +177,43 @@ export function initWorld(ctx) {
     ctx.use('live.presence')({ roomId: s.roomId, x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), name: s.me.username, avatar: s.me.avatar });
   }
 
-  // ---------- input: tap / click ----------
+  // ---------- input: tap / click / pinch ----------
+  // Pointer events cover mouse, pen and fingers. A "tap" is a quick press that didn't
+  // move much AND never had a second finger: so pinching to zoom never makes you walk.
   const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
-  let down = null;
-  renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-  renderer.domElement.addEventListener('pointerup', (e) => {
-    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) { down = null; return; }
-    down = null;
-    const rect = renderer.domElement.getBoundingClientRect();
+  const pointers = new Map(); // finger id -> {x, y}
+  let down = null;            // where the first finger went down
+  let gesture = false;        // true once a second finger joined (pinch), until all fingers lift
+  let pinch0 = null;          // { d: finger distance, z: zoom } when the pinch started
+  let zoom = 1;               // 1 = whole room fits; smaller = closer
+  const ZOOM_MIN = 0.45, ZOOM_MAX = 1.3;
+  const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  const fingerGap = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
+  const cv = renderer.domElement;
+
+  cv.addEventListener('pointerdown', (e) => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { down = { x: e.clientX, y: e.clientY }; gesture = false; }
+    if (pointers.size === 2) { gesture = true; pinch0 = { d: fingerGap(), z: zoom }; }
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch0 && pointers.size >= 2) zoom = clampZoom(pinch0.z * pinch0.d / fingerGap());
+  });
+  const lift = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch0 = null;
+    const wasTap = e.type === 'pointerup' && down && !gesture && pointers.size === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12;
+    if (pointers.size === 0) down = null;
+    if (wasTap) handleTap(e);
+  };
+  cv.addEventListener('pointerup', lift);
+  cv.addEventListener('pointercancel', lift);
+  cv.addEventListener('wheel', (e) => { zoom = clampZoom(zoom + e.deltaY * 0.001); e.preventDefault(); }, { passive: false });
+
+  function handleTap(e) {
+    const rect = cv.getBoundingClientRect();
     ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const room = currentRoom(store.get());
@@ -176,7 +224,7 @@ export function initWorld(ctx) {
       const cell = worldToCell(hitItem.point);
       bus.emit('world:tap', { target: 'item', item, cell, room });
       if (store.get().mode === 'play' && item) {
-        walkTo(hitItem.point.clone().setY(0), 1.0);
+        if (walk) me.path = walk.pathToItem(me.pos, item) || []; // walk up next to it
         bus.emit('item:activate', { item, room });
       }
       return;
@@ -185,27 +233,79 @@ export function initWorld(ctx) {
     if (hitFloor) {
       const cell = worldToCell(hitFloor.point);
       bus.emit('world:tap', { target: 'floor', cell, room });
-      if (store.get().mode === 'play') walkTo(hitFloor.point.clone().setY(0));
+      if (store.get().mode === 'play' && walk) me.path = walk.pathToPoint(me.pos, clampToRoom(hitFloor.point.clone().setY(0))) || [];
     }
-  });
-  function walkTo(p, stopShort = 0) {
-    const dir = p.clone().sub(me.pos);
-    if (stopShort && dir.length() > stopShort) p = me.pos.clone().add(dir.setLength(dir.length() - stopShort));
-    me.target = clampToRoom(p);
   }
   const clampToRoom = (p) => { p.x = Math.max(-bounds.w / 2 + 0.3, Math.min(bounds.w / 2 - 0.3, p.x)); p.z = Math.max(-bounds.d / 2 + 0.3, Math.min(bounds.d / 2 - 0.3, p.z)); return p; };
 
-  // keyboard (desktop): WASD / arrows
-  addEventListener('keydown', (e) => { if (e.target.closest?.('input,textarea,select')) return; me.keys.add(e.key.toLowerCase()); });
+  // keyboard (desktop): WASD / arrows to walk, Q / E to turn the camera
+  addEventListener('keydown', (e) => {
+    if (e.target.closest?.('input,textarea,select')) return;
+    const k = e.key.toLowerCase();
+    me.keys.add(k);
+    if (!e.repeat && !ui.isPanelOpen() && (k === 'q' || k === 'e')) rotateCamera(k === 'e' ? 1 : -1);
+  });
   addEventListener('keyup', (e) => me.keys.delete(e.key.toLowerCase()));
+  addEventListener('blur', () => me.keys.clear()); // don't keep walking if the window loses focus
 
-  // zoom: wheel + pinch
-  let zoom = 1;
-  renderer.domElement.addEventListener('wheel', (e) => { zoom = Math.max(0.55, Math.min(1.6, zoom + e.deltaY * 0.001)); e.preventDefault(); }, { passive: false });
-  const touches = new Map(); let pinch0 = null;
-  renderer.domElement.addEventListener('touchstart', (e) => { for (const t of e.changedTouches) touches.set(t.identifier, t); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch0 = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: zoom }; } }, { passive: true });
-  renderer.domElement.addEventListener('touchmove', (e) => { for (const t of e.changedTouches) touches.set(t.identifier, t); if (pinch0 && touches.size === 2) { const [a, b] = [...touches.values()]; zoom = Math.max(0.55, Math.min(1.6, pinch0.z * pinch0.d / Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY))); } }, { passive: true });
-  renderer.domElement.addEventListener('touchend', (e) => { for (const t of e.changedTouches) touches.delete(t.identifier); if (touches.size < 2) pinch0 = null; }, { passive: true });
+  // ---------- camera rotation ----------
+  // The camera looks at the room from one corner. Each tap on the button turns it 90°.
+  const BASE_YAW = Math.atan2(0.62, 0.78); // the original Sims-style angle
+  let camYaw = BASE_YAW, camYawTarget = BASE_YAW;
+  const camDir = new THREE.Vector3(0.62, 0.85, 0.78).normalize(); // from the room toward the camera
+  function rotateCamera(steps = 1) { camYawTarget += steps * Math.PI / 2; }
+  function updateWalls() {
+    // show a wall only if it's on the far side (the camera is on the other side)
+    for (const wl of walls) wl.group.visible = wl.out[0] * camDir.x + wl.out[1] * camDir.z < 0.05;
+  }
+  const rotateBtn = ui.h('button', {
+    'aria-label': 'Rotate camera', title: 'Rotate camera (Q / E)',
+    style: {
+      position: 'absolute', right: '12px', bottom: 'calc(env(safe-area-inset-bottom) + 96px)',
+      width: '52px', height: '52px', borderRadius: '50%', border: 'none', fontSize: '24px',
+      background: 'rgba(255,250,243,.95)', boxShadow: 'var(--shadow, 0 4px 16px rgba(0,0,0,.15))',
+      cursor: 'pointer', display: 'none', touchAction: 'manipulation',
+    },
+    onclick: () => rotateCamera(1),
+  }, '⟳');
+  host.append(rotateBtn);
+
+  // Fit the camera so the whole room (floor + wall height) is on screen, for any screen
+  // shape and any rotation. For each corner we check how far back the camera must be.
+  const tmpR = new THREE.Vector3(), tmpU = new THREE.Vector3(), tmpP = new THREE.Vector3();
+  function fitDistance() {
+    const fwd = camDir.clone().negate();
+    tmpR.crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+    tmpU.crossVectors(tmpR, fwd);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.8; // leave room for top bar + dock
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.94;
+    let need = 1;
+    for (const x of [-1, 1]) for (const z of [-1, 1]) for (const y of [-0.5, 1.6]) {
+      tmpP.set(x * bounds.w / 2, y, z * bounds.d / 2); // corner, relative to the look-at point
+      const along = tmpP.dot(camDir);
+      need = Math.max(need, along + Math.abs(tmpP.dot(tmpR)) / tanH, along + Math.abs(tmpP.dot(tmpU)) / tanV);
+    }
+    return need;
+  }
+
+  // Move me to (x, z) if no furniture is there. If blocked, try sliding along it
+  // (only x, or only z), so you glide along a sofa instead of getting stuck.
+  // If I'm already standing inside furniture (someone built on me), let me walk out.
+  function stepTo(x, z) {
+    const lim = (v, half) => Math.max(-half + 0.3, Math.min(half - 0.3, v));
+    x = lim(x, bounds.w / 2); z = lim(z, bounds.d / 2);
+    const ok = (px, pz) => !walk || walk.isFreeAt(px, pz) || !walk.isFreeAt(me.pos.x, me.pos.z);
+    if (ok(x, z)) { me.pos.x = x; me.pos.z = z; return true; }
+    if (ok(x, me.pos.z) && x !== me.pos.x) { me.pos.x = x; return true; }
+    if (ok(me.pos.x, z) && z !== me.pos.z) { me.pos.z = z; return true; }
+    return false;
+  }
+  // Turn smoothly instead of snapping (takes the short way round).
+  function turnToward(obj, angle, dt) {
+    let diff = angle - obj.rotation.y;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    obj.rotation.y += diff * Math.min(1, dt * 12);
+  }
 
   // ---------- loop ----------
   const clock = new THREE.Clock();
@@ -213,19 +313,25 @@ export function initWorld(ctx) {
   const SPEED = 3.2;
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
-    // keyboard movement (camera looks from +x,+z, so "up" is toward -x-z)
-    const k = me.keys; const kv = new THREE.Vector3(
-      (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0), 0,
-      (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0));
+    // keyboard: W walks AWAY from the camera, whatever way the camera is turned
+    const k = me.keys;
+    const fwdKey = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
+    const sideKey = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     let moving = false;
-    if (kv.lengthSq() && !ui.isPanelOpen()) {
-      kv.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(0.62, 0.78));
-      me.pos.addScaledVector(kv, SPEED * dt); clampToRoom(me.pos); me.target = null; moving = true;
-      me.holder.rotation.y = Math.atan2(kv.x, kv.z);
-    } else if (me.target) {
-      const d = me.target.clone().sub(me.pos);
-      if (d.length() < 0.05) me.target = null;
-      else { const step = Math.min(d.length(), SPEED * dt); me.pos.addScaledVector(d.normalize(), step); moving = true; me.holder.rotation.y = Math.atan2(d.x, d.z); }
+    if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
+      const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); // forward on the floor
+      const kv = new THREE.Vector3(fx * fwdKey - fz * sideKey, 0, fz * fwdKey + fx * sideKey).normalize();
+      me.path = [];
+      if (stepTo(me.pos.x + kv.x * SPEED * dt, me.pos.z + kv.z * SPEED * dt)) moving = true;
+      turnToward(me.holder, Math.atan2(kv.x, kv.z), dt);
+    } else if (me.path.length) {
+      // tap-to-walk: follow the path point by point
+      const next = me.path[0];
+      const dx = next.x - me.pos.x, dz = next.z - me.pos.z, len = Math.hypot(dx, dz);
+      const step = SPEED * dt;
+      if (len <= step) { me.pos.x = next.x; me.pos.z = next.z; me.path.shift(); }
+      else { me.pos.x += dx / len * step; me.pos.z += dz / len * step; }
+      if (len > 0.001) { turnToward(me.holder, Math.atan2(dx, dz), dt); moving = true; }
     }
     me.holder.position.copy(me.pos);
     if (me.av) animateAvatar(me.av, dt, moving);
@@ -240,10 +346,16 @@ export function initWorld(ctx) {
       animateAvatar(r.av, dt, mv);
     }
 
-    // camera follows me, Sims-style angle
-    camTarget.lerp(new THREE.Vector3(me.pos.x * 0.6, 0.6, me.pos.z * 0.6), Math.min(1, dt * 4));
-    const dist = Math.max(bounds.w, bounds.d) * 1.25 * zoom * (camera.aspect < 0.8 ? 1.45 : 1);
-    camera.position.set(camTarget.x + dist * 0.62, camTarget.y + dist * 0.85, camTarget.z + dist * 0.78);
+    // camera: smooth turn toward the chosen angle, then fit the room on screen.
+    camYaw += (camYawTarget - camYaw) * Math.min(1, dt * 7);
+    camDir.set(Math.sin(camYaw) * 0.996, 0.85, Math.cos(camYaw) * 0.996).normalize();
+    updateWalls();
+    // At normal zoom the camera looks at the room centre (the whole room fits).
+    // Zoomed in, it follows me more, so I never walk off screen.
+    const follow = 0.15 + 0.85 * Math.min(1, Math.max(0, (1 - zoom) / (1 - ZOOM_MIN)));
+    camTarget.lerp(new THREE.Vector3(me.pos.x * follow, 0.5, me.pos.z * follow), Math.min(1, dt * 4));
+    const dist = fitDistance() * zoom;
+    camera.position.copy(camTarget).addScaledVector(camDir, dist);
     camera.lookAt(camTarget);
     renderer.render(scene, camera);
   });
@@ -260,6 +372,7 @@ export function initWorld(ctx) {
     if (!room && roomGroup) { scene.remove(roomGroup); roomGroup = null; roomRef = null; }
     if (s.players !== prev.players) syncRemotes();
     if (grid && s.mode !== prev.mode) grid.visible = s.mode === 'build';
+    rotateBtn.style.display = s.house ? 'block' : 'none';
   });
 
   bus.on('room:goto', ({ roomId }) => { store.set({ roomId }); });
