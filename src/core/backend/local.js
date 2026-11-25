@@ -16,6 +16,18 @@ const write = (k, v) => {
 const hash = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0; return String(h); };
 const code = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
+// Finds the house, who is asking (the signed-in demo user) and the person being changed.
+function roleContext(houseId, userId) {
+  const all = read('op:houses', {});
+  const house = all[houseId];
+  const me = read('op:session', null);
+  if (!me) throw new Error('Not signed in');
+  if (!house) throw new Error('House not found');
+  const mine = house.members?.[me]?.role;
+  if (!mine) throw new Error('You are not in this house');
+  return { all, house, me, mine, target: userId ? house.members[userId] : null };
+}
+
 export function createLocalBackend() {
   const users = () => read('op:users', {});
   const houses = () => read('op:houses', {});
@@ -87,6 +99,38 @@ export function createLocalBackend() {
       if (!existing || (existing === 'guest' && role === 'housemate')) house.members[me.id] = { role, name: me.username };
       write('op:houses', all);
       return { house, role: house.members[me.id].role };
+    },
+
+    // ---------- member roles (same rules as the SQL functions in supabase/schema.sql) ----------
+    // Housemates can promote/remove guests; only the owner can demote/remove housemates;
+    // the owner can never be changed or removed, and cannot leave their own house.
+    async setMemberRole(houseId, userId, role) {
+      const { all, house, mine, target } = roleContext(houseId, userId);
+      if (!['housemate', 'guest'].includes(role)) throw new Error('Role must be housemate or guest');
+      if (mine === 'guest') throw new Error('Only housemates can change roles');
+      if (!target) throw new Error('That person is not in this house');
+      if (target.role === 'owner') throw new Error("The owner's role cannot be changed");
+      if (target.role === 'housemate' && role === 'guest' && mine !== 'owner') throw new Error('Only the owner can make a housemate a guest');
+      target.role = role;
+      write('op:houses', all);
+      return house;
+    },
+    async removeMember(houseId, userId) {
+      const { all, house, me, mine, target } = roleContext(houseId, userId);
+      if (userId === me) throw new Error('Use "Leave house" to leave yourself');
+      if (mine === 'guest') throw new Error('Only housemates can remove people');
+      if (!target) throw new Error('That person is not in this house');
+      if (target.role === 'owner') throw new Error('The owner cannot be removed');
+      if (target.role === 'housemate' && mine !== 'owner') throw new Error('Only the owner can remove a housemate');
+      delete house.members[userId];
+      write('op:houses', all);
+      return house;
+    },
+    async leaveHouse(houseId) {
+      const { all, house, me, mine } = roleContext(houseId, null);
+      if (mine === 'owner') throw new Error('The owner cannot leave their own house');
+      delete house.members[me];
+      write('op:houses', all);
     },
 
     // ---------- chat ----------

@@ -92,6 +92,19 @@ export function createSupabaseBackend(url, anonKey) {
       return { house, role: res.role };
     },
 
+    // ---------- member roles (the rules live in the SQL functions in supabase/schema.sql) ----------
+    async setMemberRole(houseId, userId, role) {
+      must(await sb.rpc('set_member_role', { p_house: houseId, p_user: userId, p_role: role }));
+      return this.getHouse(houseId);
+    },
+    async removeMember(houseId, userId) {
+      must(await sb.rpc('remove_member', { p_house: houseId, p_user: userId }));
+      return this.getHouse(houseId);
+    },
+    async leaveHouse(houseId) {
+      must(await sb.rpc('leave_house', { p_house: houseId }));
+    },
+
     // ---------- chat ----------
     async listMessages(houseId, limit = 60) {
       const rows = must(await sb.from('messages').select('*').eq('house_id', houseId).order('id', { ascending: false }).limit(limit));
