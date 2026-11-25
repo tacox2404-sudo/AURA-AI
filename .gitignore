@@ -6,3 +6,4 @@ dist
 .DS_Store
 supabase/.temp
 tests/last-smoke.png
+dist-smoke
