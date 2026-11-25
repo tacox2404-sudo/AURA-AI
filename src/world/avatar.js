@@ -85,9 +85,26 @@ export function buildAvatar(a = randomAppearance()) {
   return root;
 }
 
+/** Sit down / stand up. Sitting: legs point forward from the hips, arms rest a little forward.
+ *  The caller lowers the whole avatar onto the seat (see seats.js). */
+export function setSitting(av, on) {
+  const u = av.userData;
+  if (!!u.sitting === !!on) return;
+  u.sitting = !!on;
+  if (on) {
+    u.legL.position.set(-0.13, 0.6, 0.3); u.legR.position.set(0.13, 0.6, 0.3);
+    u.legL.rotation.x = -Math.PI / 2; u.legR.rotation.x = -Math.PI / 2;
+    u.armL.rotation.x = -0.4; u.armR.rotation.x = -0.4;
+  } else {
+    u.legL.position.set(-0.13, 0.3, 0); u.legR.position.set(0.13, 0.3, 0);
+    u.legL.rotation.x = 0; u.legR.rotation.x = 0; u.armL.rotation.x = 0; u.armR.rotation.x = 0;
+  }
+}
+
 /** Walk cycle: call every frame with moving=true/false. */
 export function animateAvatar(av, dt, moving) {
   const u = av.userData;
+  if (u.sitting) { u.phase += dt * 2; u.body.position.y = Math.sin(u.phase) * 0.008; return; } // just a gentle breathing
   u.phase += dt * (moving ? 10 : 2);
   const swing = moving ? Math.sin(u.phase) * 0.6 : 0;
   u.legL.rotation.x = swing; u.legR.rotation.x = -swing;

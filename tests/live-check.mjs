@@ -17,8 +17,8 @@ if (!url || !key) { console.error('Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_
 const house = 'live-check-' + Date.now();
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const mk = (id) => { const seen = []; const c = createSupabaseBackend(url, key).connect(house, { id }, { onPresence: (l) => seen.push(l), onEvent: () => {} }); return { c, seen }; };
-const look = (P) => (P.seen.at(-1) || []).map((p) => `${p.name}@${p.x},${p.z}/${p.roomId}`).sort().join(' ');
-const move = (P, name, x, z, roomId = 'r1') => P.c.updatePresence({ roomId, x, z, name, avatar: { skin: 1 } });
+const look = (P) => (P.seen.at(-1) || []).map((p) => `${p.name}@${p.x},${p.z}/${p.roomId}${p.sit ? ' sitting' : ''}`).sort().join(' ');
+const move = (P, name, x, z, roomId = 'r1', extra = {}) => P.c.updatePresence({ roomId, x, z, name, avatar: { skin: 1 }, ...extra });
 let failed = 0;
 // Wait until the situation matches (up to 10 s) and report how long the network took.
 async function expectSoon(label, read, want, max = 10000) {
@@ -38,6 +38,10 @@ for (let i = 1; i <= 8; i++) { move(A, 'Alice', 1 + i, 1); await wait(130); }
 await expectSoon('B sees Alice walk', () => look(B), 'Alice@9,1/r1');
 move(A, 'Alice', 0, 0, 'r2');
 await expectSoon('B sees Alice change room', () => look(B), 'Alice@0,0/r2');
+move(A, 'Alice', 0, 0, 'r2', { sit: 1, sy: 0.22, ry: 1.57 });
+await expectSoon('B sees Alice sit down', () => look(B), 'Alice@0,0/r2 sitting');
+move(A, 'Alice', 0, 0, 'r2', { sit: 0, sy: 0, ry: 0 });
+await expectSoon('B sees Alice stand up', () => look(B), 'Alice@0,0/r2');
 const C = mk('C'); await wait(1200); move(C, 'Cara', 3, 3);
 await expectSoon('late joiner sees where Bob stands', () => look(C).includes('Bob@13,5/r1'), true);
 A.c.leave();
