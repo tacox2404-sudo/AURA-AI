@@ -22,7 +22,7 @@ House = {
   friendsCanVisit?: boolean, // owner switch (default off): accepted friends of the owner may join as guests
 }
 Room = { id, name, vibe, theme: { floor, wall, accent, wood }, size: [w, d], items: Item[] }
-Item = { id, kind /* catalog id */, x, z /* grid cell */, rot /* 0-3 */, activity?, data?: { url?, label?, key? } }
+Item = { id, kind /* catalog id */, x, z /* grid cell */, rot /* 0-3 */, color? /* '#rrggbb', replaces the room accent on this item (Build 🎨) */, activity?, data?: { url?, label?, key? } }
 
 Presence = { userId, name, avatar, roomId, x, z, sit?: 0 | 1, sy?: number /* seat height */, ry?: number /* facing, radians */ }
 Message  = { id, houseId, userId, name, text, kind: 'text' | 'nudge' | 'system', at }
@@ -46,6 +46,8 @@ has its own saved state. Win records are under the key `records`.
 | `house:left` | none | Social | everyone |
 | `room:goto` | `{ roomId }` | anyone | World (switches room) |
 | `world:tap` | `{ target: 'floor' \| 'item', cell: {x,z}, item?, room }` | World | Building (build mode) |
+| `build:placing` | `{ kind, rot }` or `null` | Building (build mode: which catalog item the next floor tap places, and its turn) | World (draw a see-through ghost) |
+| `build:select` | `{ itemId }` (`null` = nothing) | Building (the placed item being edited) | World (highlight it) |
 | `item:activate` | `{ item, room }` | World (play mode) | Activities |
 | `chat:message` | `Message` | Social | World (speech bubbles) |
 | `points:award` | `{ amount, reason }` | anyone | Social |
