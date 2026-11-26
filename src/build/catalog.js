@@ -1,50 +1,24 @@
 // FURNITURE CATALOG (owned by Building).
-// Every item is built from simple boxes and cylinders, so we need no 3D files yet.
-// Later you can swap any item for a real CC0 model (Kenney / Quaternius) by
-// replacing its build() function with a GLTF loader. The id must stay the same.
-//
-// Palette categories: Seating (you can sit on these), Tables, Games, Fun, Boards, Decor,
-// Kitchen, Bathroom, Bedroom, Garden, Party.
-//
+// The first 43 items live here; src/build/catalogMore.js and catalogTeam.js (the team's 30 extra pieces) have the rest; src/build/catalogInfo.js gives EVERY item
+// its cluster, description and style tags (that is what the catalogue screen shows).
 // Item fields:
 //   id        unique id, saved in houses (never rename one that is in use)
-//   name      shown in the build palette
-//   cat       palette category
+//   name      shown in the catalogue
+//   cat       old palette category (kept for old code and seats: 'Seating' items can be sat on)
+//   cluster   catalogue group (see CLUSTERS)      desc / style  text and tags for the catalogue
 //   size      [w, d] in floor cells
 //   wall      true = prefers to stand against the back wall
 //   activity  what opens when someone taps it (see src/activities/registry.js)
 //   build(t)  returns a THREE.Group; t = room theme colours { floor, wall, accent, wood }
 
-import * as THREE from 'three';
+import { mat, box, cyl, ball, legs, board, G } from './shapes.js';
+import { MORE } from './catalogMore.js';
+import { TEAM } from './catalogTeam.js';
+import { INFO, CLUSTERS } from './catalogInfo.js';
 
-const matCache = new Map();
-export function mat(color, opts = {}) {
-  const key = color + JSON.stringify(opts);
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, flatShading: true, ...opts }));
-  return matCache.get(key);
-}
-function box(g, w, h, d, color, x = 0, y = 0, z = 0, opts) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, opts));
-  m.position.set(x, y + h / 2, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
-}
-function cyl(g, r, h, color, x = 0, y = 0, z = 0, seg = 10, rTop = r) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, r, h, seg), mat(color));
-  m.position.set(x, y + h / 2, z); m.castShadow = true; g.add(m); return m;
-}
-function ball(g, r, color, x = 0, y = 0, z = 0, opts) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat(color, opts));
-  m.position.set(x, y, z); m.castShadow = true; g.add(m); return m;
-}
-function legs(g, w, d, h, color, inset = 0.08, t = 0.08) {
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, t, h, t, color, sx * (w / 2 - inset), 0, sz * (d / 2 - inset));
-}
-function board(g, w, h, frame, face, y = 0.9) {
-  box(g, 0.08, y, 0.08, frame, -w / 2 + 0.1, 0, 0); box(g, 0.08, y, 0.08, frame, w / 2 - 0.1, 0, 0);
-  box(g, w, h, 0.08, frame, 0, y - 0.1, 0); box(g, w - 0.14, h - 0.14, 0.1, face, 0, y - 0.03, 0.01);
-}
-const G = (fn) => (t) => { const g = new THREE.Group(); fn(g, t); return g; };
+export { mat, CLUSTERS };
 
-export const CATALOG = [
+const BASE = [
   // ---------------- Seating ----------------
   { id: 'sofa', name: 'Sofa', cat: 'Seating', size: [2, 1], wall: true, build: G((g, t) => {
     box(g, 1.9, 0.35, 0.85, t.accent, 0, 0.1); box(g, 1.9, 0.5, 0.22, t.accent, 0, 0.35, -0.32);
@@ -160,148 +134,19 @@ export const CATALOG = [
   }) },
   { id: 'clock', name: 'Grandfather clock', cat: 'Decor', size: [1, 1], wall: true, activity: 'calendar', build: G((g, t) => { box(g, 0.5, 1.9, 0.35, t.wood); cyl(g, 0.18, 0.04, '#fff', 0, 1.55, 0.18, 12).rotation.x = Math.PI / 2; }) },
 
-  { id: 'piano', name: 'Piano', cat: 'Fun', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.5, 1.1, 0.5, '#1b1b1b'); box(g, 1.4, 0.05, 0.25, '#ffffff', 0, 0.75, 0.3); for (let i = 0; i < 8; i++) box(g, 0.05, 0.03, 0.15, '#111', -0.55 + i * 0.16, 0.79, 0.27); }) },
-  { id: 'tree', name: 'Indoor tree', cat: 'Decor', size: [1, 1], build: G((g, t) => { cyl(g, 0.25, 0.3, '#8d6e63'); cyl(g, 0.08, 1.0, '#6d4c41', 0, 0.3); ball(g, 0.5, '#3a7d44', 0, 1.6); ball(g, 0.35, '#4caf50', 0.25, 1.9, 0.1); }) },
-
-  // ---------------- Kitchen ----------------
-  { id: 'fridge', name: 'Fridge', cat: 'Kitchen', size: [1, 1], wall: true, activity: 'notes', build: G((g, t) => { box(g, 0.8, 1.8, 0.7, '#e9ecef'); box(g, 0.04, 0.4, 0.04, '#999', 0.3, 1.1, 0.36); box(g, 0.04, 0.3, 0.04, '#999', 0.3, 0.5, 0.36); box(g, 0.78, 0.02, 0.02, '#bbb', 0, 1.0, 0.36); }) },
-  { id: 'counter', name: 'Kitchen counter', cat: 'Kitchen', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.9, 0.85, 0.7, t.wood); box(g, 1.95, 0.06, 0.75, '#f8f9fa', 0, 0.85); box(g, 0.5, 0.05, 0.4, '#adb5bd', 0.4, 0.9); }) },
-  { id: 'stove', name: 'Stove + oven', cat: 'Kitchen', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.85, 0.85, 0.7, '#f1f3f5'); box(g, 0.6, 0.35, 0.02, '#343a40', 0, 0.2, 0.36); box(g, 0.5, 0.04, 0.04, '#adb5bd', 0, 0.62, 0.37);
-    for (const [x, z] of [[-0.2, -0.15], [0.2, -0.15], [-0.2, 0.15], [0.2, 0.15]]) cyl(g, 0.12, 0.03, '#222', x, 0.85, z, 12);
-    cyl(g, 0.15, 0.18, '#c0392b', 0.2, 0.88, 0.15, 12); // a pot on the stove
-  }) },
-  { id: 'kitchen_sink', name: 'Kitchen sink', cat: 'Kitchen', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.85, 0.85, 0.7, t.wood); box(g, 0.9, 0.06, 0.75, '#f8f9fa', 0, 0.85); box(g, 0.55, 0.04, 0.4, '#8ecae6', 0, 0.88);
-    box(g, 0.06, 0.35, 0.06, '#adb5bd', 0, 0.9, -0.28); box(g, 0.06, 0.06, 0.25, '#adb5bd', 0, 1.2, -0.17);
-  }) },
-  { id: 'pantry', name: 'Pantry cupboard', cat: 'Kitchen', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.85, 1.9, 0.5, t.wood); box(g, 0.02, 1.8, 0.02, '#3d2b1f', 0, 0.05, 0.26); box(g, 0.04, 0.2, 0.04, '#e9c46a', -0.08, 0.95, 0.27); box(g, 0.04, 0.2, 0.04, '#e9c46a', 0.08, 0.95, 0.27);
-  }) },
-  { id: 'kitchen_island', name: 'Kitchen island', cat: 'Kitchen', size: [2, 1], build: G((g, t) => {
-    box(g, 1.8, 0.85, 0.8, t.accent); box(g, 1.9, 0.07, 0.9, '#f8f9fa', 0, 0.85);
-    ball(g, 0.1, '#ff6b35', -0.5, 1.0, 0); ball(g, 0.09, '#9ccc65', -0.35, 0.99, 0.1); ball(g, 0.1, '#ffd23f', -0.42, 1.0, -0.12); // fruit
-    cyl(g, 0.12, 0.04, '#ffffff', 0.4, 0.92, 0, 12); // a plate
-  }) },
-  { id: 'coffee_machine', name: 'Coffee corner', cat: 'Kitchen', size: [1, 1], wall: true, build: G((g, t) => {
-    legs(g, 0.6, 0.5, 0.8, t.wood); box(g, 0.7, 0.06, 0.55, t.wood, 0, 0.8);
-    box(g, 0.35, 0.45, 0.3, '#2b2d42', 0, 0.86); box(g, 0.25, 0.08, 0.1, '#8d99ae', 0, 1.05, 0.15); cyl(g, 0.06, 0.1, '#ffffff', 0, 0.9, 0.12, 10);
-  }) },
-
-  // ---------------- Bathroom ----------------
-  { id: 'bathtub', name: 'Bathtub', cat: 'Bathroom', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.8, 0.6, 0.85, '#ffffff'); box(g, 1.6, 0.05, 0.65, '#8ecae6', 0, 0.5); ball(g, 0.1, '#ffd23f', 0.3, 0.6, 0); }) },
-  { id: 'shower', name: 'Shower', cat: 'Bathroom', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.9, 0.1, 0.9, '#e9ecef'); box(g, 0.9, 2.0, 0.05, '#dee2e6', 0, 0, -0.42);
-    box(g, 0.04, 2.0, 0.9, '#bde0fe', -0.43, 0, 0, { transparent: true, opacity: 0.4 }); box(g, 0.04, 2.0, 0.9, '#bde0fe', 0.43, 0, 0, { transparent: true, opacity: 0.4 });
-    box(g, 0.04, 0.04, 0.3, '#adb5bd', 0, 1.8, -0.27); cyl(g, 0.1, 0.03, '#adb5bd', 0, 1.77, -0.12, 10);
-  }) },
-  { id: 'toilet', name: 'Toilet', cat: 'Bathroom', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.5, 0.5, 0.2, '#ffffff', 0, 0.3, -0.25); cyl(g, 0.2, 0.4, '#ffffff', 0, 0, 0.05, 12, 0.24); cyl(g, 0.25, 0.04, '#f1f3f5', 0, 0.4, 0.05, 12);
-  }) },
-  { id: 'bath_sink', name: 'Sink + mirror', cat: 'Bathroom', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.8, 0.8, 0.5, t.wood); box(g, 0.85, 0.06, 0.55, '#ffffff', 0, 0.8); box(g, 0.45, 0.04, 0.3, '#8ecae6', 0, 0.83);
-    box(g, 0.7, 0.7, 0.04, '#c9d6df', 0, 1.15, -0.24, { metalness: 0.4, roughness: 0.2 }); box(g, 0.78, 0.78, 0.03, '#ffffff', 0, 1.11, -0.26);
-  }) },
-  { id: 'towel_rack', name: 'Towel rack', cat: 'Bathroom', size: [1, 1], build: G((g, t) => {
-    box(g, 0.05, 1.2, 0.05, '#adb5bd', -0.3); box(g, 0.05, 1.2, 0.05, '#adb5bd', 0.3); box(g, 0.65, 0.04, 0.04, '#adb5bd', 0, 1.15);
-    box(g, 0.25, 0.6, 0.06, t.accent, -0.13, 0.58); box(g, 0.25, 0.5, 0.06, '#f4efe6', 0.14, 0.68);
-  }) },
-  { id: 'bath_mat', name: 'Bath mat', cat: 'Bathroom', size: [1, 1], floorOnly: true, build: G((g, t) => { box(g, 0.85, 0.03, 0.6, '#a8dadc'); box(g, 0.7, 0.035, 0.45, '#f1faee'); }) },
-
-  // ---------------- Bedroom ----------------
-  { id: 'bed', name: 'Bed', cat: 'Bedroom', size: [2, 2], wall: true, build: G((g, t) => {
+  // ---------------- Rooms (kitchen, bath, bedroom) ----------------
+  { id: 'bed', name: 'Bed', cat: 'Home', size: [2, 2], wall: true, build: G((g, t) => {
     box(g, 1.5, 0.35, 1.9, t.wood); box(g, 1.4, 0.2, 1.75, '#ffffff', 0, 0.35); box(g, 1.42, 0.12, 1.1, t.accent, 0, 0.5, 0.3); box(g, 1.5, 0.8, 0.12, t.wood, 0, 0.35, -0.9);
     box(g, 0.5, 0.12, 0.3, '#f4efe6', -0.35, 0.55, -0.6); box(g, 0.5, 0.12, 0.3, '#f4efe6', 0.35, 0.55, -0.6);
   }) },
-  { id: 'bunk_bed', name: 'Bunk bed', cat: 'Bedroom', size: [1, 2], wall: true, build: G((g, t) => {
-    for (const sx of [-0.42, 0.42]) for (const sz of [-0.9, 0.9]) box(g, 0.08, 1.9, 0.08, t.wood, sx, 0, sz);
-    for (const y of [0.3, 1.2]) { box(g, 0.9, 0.12, 1.85, t.wood, 0, y); box(g, 0.82, 0.12, 1.75, '#ffffff', 0, y + 0.12); box(g, 0.84, 0.08, 1.0, y > 1 ? '#4dabf7' : t.accent, 0, y + 0.24, 0.35); }
-    for (let i = 0; i < 4; i++) box(g, 0.04, 0.04, 0.3, t.wood, 0.46, 0.45 + i * 0.25, 0.75); // ladder steps
-  }) },
-  { id: 'nightstand', name: 'Nightstand', cat: 'Bedroom', size: [1, 1], build: G((g, t) => {
-    box(g, 0.5, 0.5, 0.45, t.wood); box(g, 0.1, 0.04, 0.03, '#e9c46a', 0, 0.32, 0.23);
-    cyl(g, 0.07, 0.15, '#666', 0, 0.5); cyl(g, 0.15, 0.18, '#fff1c1', 0, 0.65, 0, 10, 0.1).material = mat('#fff1c1', { emissive: '#ffcc66' });
-  }) },
-  { id: 'closet', name: 'Clothes closet', cat: 'Bedroom', size: [2, 1], wall: true, build: G((g, t) => {
-    box(g, 1.6, 2.0, 0.6, t.wood); box(g, 0.02, 1.9, 0.02, '#3d2b1f', 0, 0.05, 0.31);
-    box(g, 0.04, 0.25, 0.04, '#e9c46a', -0.1, 1.0, 0.32); box(g, 0.04, 0.25, 0.04, '#e9c46a', 0.1, 1.0, 0.32);
-  }) },
-  { id: 'dresser', name: 'Dresser + mirror', cat: 'Bedroom', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.9, 0.8, 0.45, t.wood); for (let i = 0; i < 3; i++) box(g, 0.8, 0.02, 0.02, '#3d2b1f', 0, 0.25 + i * 0.25, 0.23);
-    box(g, 0.6, 0.75, 0.04, '#c9d6df', 0, 0.85, -0.18, { metalness: 0.4, roughness: 0.2 }); ball(g, 0.05, t.accent, 0.3, 0.85, 0.05);
-  }) },
-  { id: 'teddy', name: 'Giant teddy bear', cat: 'Bedroom', size: [1, 1], build: G((g, t) => {
-    const fur = '#b07d52'; const b = ball(g, 0.3, fur, 0, 0.3); b.scale.set(1, 1.1, 0.9); ball(g, 0.2, fur, 0, 0.75);
-    ball(g, 0.07, fur, -0.15, 0.92); ball(g, 0.07, fur, 0.15, 0.92); ball(g, 0.06, '#f4d6b0', 0, 0.72, 0.17); ball(g, 0.08, t.accent, 0, 0.55, 0.15);
-  }) },
-
-  // ---------------- Garden ----------------
-  { id: 'bush', name: 'Round bush', cat: 'Garden', size: [1, 1], build: G((g, t) => { ball(g, 0.38, '#4f9d69', 0, 0.35); ball(g, 0.25, '#62b37a', 0.2, 0.55, 0.1); ball(g, 0.22, '#3d8b5a', -0.2, 0.5, -0.05); }) },
-  { id: 'flower_bed', name: 'Flower bed', cat: 'Garden', size: [2, 1], build: G((g, t) => {
-    box(g, 1.8, 0.25, 0.7, '#8d6e63'); box(g, 1.7, 0.05, 0.6, '#5d4037', 0, 0.25);
-    const cols = ['#ff4d6d', '#ffd23f', '#c77dff', '#ff8fab', '#ffffff', '#ff9f1c'];
-    for (let i = 0; i < 12; i++) { const x = -0.7 + (i % 6) * 0.28, z = i < 6 ? -0.15 : 0.15; cyl(g, 0.015, 0.25, '#4f9d69', x, 0.28, z, 5); ball(g, 0.07, cols[i % 6], x, 0.56, z); }
-  }) },
-  { id: 'fountain', name: 'Wishing fountain', cat: 'Garden', size: [2, 2], activity: 'wishlist', build: G((g, t) => {
-    cyl(g, 0.9, 0.35, '#bfc5cc', 0, 0, 0, 16); cyl(g, 0.78, 0.05, '#4dabf7', 0, 0.32, 0, 16);
-    cyl(g, 0.12, 0.7, '#bfc5cc', 0, 0.35, 0, 10); cyl(g, 0.35, 0.12, '#bfc5cc', 0, 1.0, 0, 12); ball(g, 0.15, '#8ecae6', 0, 1.2, 0, { emissive: '#2a6f9a' });
-  }) },
-  { id: 'bbq', name: 'Barbecue', cat: 'Garden', size: [1, 1], build: G((g, t) => {
-    for (const a of [0, 2.1, 4.2]) box(g, 0.05, 0.6, 0.05, '#333', Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
-    const k = ball(g, 0.35, '#222', 0, 0.75); k.scale.set(1, 0.6, 1); box(g, 0.6, 0.03, 0.6, '#888', 0, 0.85);
-    for (const x of [-0.15, 0.1]) box(g, 0.18, 0.06, 0.08, '#a0522d', x, 0.88, 0.05); ball(g, 0.06, '#ff5500', 0, 0.82, -0.15, { emissive: '#ff3300' });
-  }) },
-  { id: 'picnic_table', name: 'Picnic table', cat: 'Garden', size: [2, 2], build: G((g, t) => {
-    legs(g, 1.6, 0.6, 0.7, t.wood); box(g, 1.8, 0.07, 0.8, t.wood, 0, 0.7);
-    box(g, 1.8, 0.06, 0.3, t.wood, 0, 0.4, -0.75); box(g, 1.8, 0.06, 0.3, t.wood, 0, 0.4, 0.75);
-    for (const z of [-0.75, 0.75]) { box(g, 0.06, 0.4, 0.06, t.wood, -0.75, 0, z); box(g, 0.06, 0.4, 0.06, t.wood, 0.75, 0, z); }
-    box(g, 0.8, 0.01, 0.8, '#e63946', 0, 0.77); ball(g, 0.1, '#ff6b35', 0.2, 0.85, 0.1); // checked cloth + fruit
-  }) },
-  { id: 'garden_lamp', name: 'Garden lantern', cat: 'Garden', size: [1, 1], build: G((g, t) => {
-    cyl(g, 0.15, 0.08, '#2b2d42'); cyl(g, 0.03, 1.2, '#2b2d42', 0, 0.08); box(g, 0.25, 0.3, 0.25, '#fff1c1', 0, 1.25, 0, { emissive: '#ffb703' }); cyl(g, 0.2, 0.1, '#2b2d42', 0, 1.55, 0, 4, 0.02);
-  }) },
-  { id: 'fence', name: 'Wooden fence', cat: 'Garden', size: [2, 1], wall: true, build: G((g, t) => {
-    for (let i = 0; i < 6; i++) box(g, 0.14, 0.8, 0.06, '#f4efe6', -0.8 + i * 0.32, 0, -0.35);
-    box(g, 1.9, 0.08, 0.04, '#f4efe6', 0, 0.25, -0.31); box(g, 1.9, 0.08, 0.04, '#f4efe6', 0, 0.6, -0.31);
-  }) },
-
-  // ---------------- Party ----------------
-  { id: 'dj_booth', name: 'DJ booth', cat: 'Party', size: [2, 1], wall: true, activity: 'portal', build: G((g, t) => {
-    box(g, 1.8, 0.9, 0.6, '#1b1b2f'); box(g, 1.7, 0.05, 0.02, '#ff4fd8', 0, 0.6, 0.31, { emissive: '#a0278a' });
-    for (const x of [-0.45, 0.45]) { cyl(g, 0.22, 0.04, '#333', x, 0.9, 0, 16); cyl(g, 0.05, 0.05, '#ff4fd8', x, 0.94, 0, 8); }
-    box(g, 0.3, 0.05, 0.3, '#444', 0, 0.9);
-  }) },
-  { id: 'speaker', name: 'Big speaker', cat: 'Party', size: [1, 1], build: G((g, t) => {
-    box(g, 0.6, 1.2, 0.5, '#222'); cyl(g, 0.22, 0.04, '#555', 0, 0.35, 0.26, 14).rotation.x = Math.PI / 2; cyl(g, 0.12, 0.04, '#555', 0, 0.9, 0.26, 14).rotation.x = Math.PI / 2;
-  }) },
-  { id: 'disco_ball', name: 'Disco ball', cat: 'Party', size: [1, 1], build: G((g, t) => {
-    cyl(g, 0.2, 0.05, '#333'); cyl(g, 0.02, 1.5, '#888', 0, 0.05); ball(g, 0.3, '#dfe7fd', 0, 1.85, 0, { metalness: 0.9, roughness: 0.15, emissive: '#7a54ff', emissiveIntensity: 0.25 });
-  }) },
-  { id: 'party_table', name: 'Cake + snacks table', cat: 'Party', size: [2, 1], build: G((g, t) => {
-    legs(g, 1.6, 0.6, 0.7, t.wood); box(g, 1.8, 0.07, 0.8, '#ffffff', 0, 0.7);
-    cyl(g, 0.22, 0.2, '#ffc8dd', -0.4, 0.77, 0, 14); cyl(g, 0.16, 0.14, '#ff8fab', -0.4, 0.97, 0, 14);
-    for (const x of [-0.45, -0.35]) { cyl(g, 0.015, 0.1, '#fff8e7', x, 1.11); ball(g, 0.025, '#ffb703', x, 1.23, 0, { emissive: '#ff8800' }); }
-    cyl(g, 0.15, 0.05, '#e9c46a', 0.3, 0.77, 0, 12); for (let i = 0; i < 3; i++) cyl(g, 0.05, 0.15, ['#ff4d6d', '#4dabf7', '#9ccc65'][i], 0.55 + (i % 2) * 0.1, 0.77, -0.15 + i * 0.15, 8);
-  }) },
-  { id: 'balloon_arch', name: 'Balloon arch', cat: 'Party', size: [2, 1], wall: true, build: G((g, t) => {
-    const cols = ['#ff4d6d', '#ffd23f', '#4dabf7', '#c77dff', '#9ccc65'];
-    for (let i = 0; i <= 12; i++) { const a = Math.PI * i / 12; ball(g, 0.16, cols[i % 5], Math.cos(a) * 0.85, 0.15 + Math.sin(a) * 1.6, 0); }
-  }) },
-  { id: 'gift_pile', name: 'Pile of presents', cat: 'Party', size: [1, 1], activity: 'wishlist', build: G((g, t) => {
-    for (const [x, z, s, c] of [[-0.15, -0.1, 0.35, '#4dabf7'], [0.18, 0.05, 0.3, '#9ccc65'], [-0.05, 0.2, 0.25, '#c77dff']]) { box(g, s, s, s, c, x, 0, z); box(g, 0.05, s + 0.01, s + 0.01, '#ffd23f', x, 0, z); }
-    box(g, 0.22, 0.22, 0.22, '#ff6b9a', -0.12, 0.35, -0.1);
-  }) },
-
-  // ---------------- extra seats (Seating = you can sit on it) ----------------
-  { id: 'deck_chair', name: 'Deck chair', cat: 'Seating', size: [1, 1], build: G((g, t) => {
-    legs(g, 0.55, 0.8, 0.42, t.wood); box(g, 0.6, 0.06, 0.85, t.accent, 0, 0.42); box(g, 0.6, 0.6, 0.06, t.accent, 0, 0.45, -0.38).rotation.x = -0.35;
-  }) },
-  { id: 'loveseat', name: 'Loveseat', cat: 'Seating', size: [2, 1], wall: true, build: G((g, t) => {
-    box(g, 1.7, 0.35, 0.8, '#ff8fab', 0, 0.1); box(g, 1.7, 0.55, 0.2, '#ff8fab', 0, 0.35, -0.3);
-    box(g, 0.18, 0.3, 0.8, '#ff8fab', -0.76, 0.35); box(g, 0.18, 0.3, 0.8, '#ff8fab', 0.76, 0.35);
-    const h1 = ball(g, 0.13, '#ff4d6d', -0.12, 0.88, -0.3); h1.scale.set(1, 1, 0.4); const h2 = ball(g, 0.13, '#ff4d6d', 0.12, 0.88, -0.3); h2.scale.set(1, 1, 0.4);
-  }) },
+  { id: 'fridge', name: 'Fridge', cat: 'Home', size: [1, 1], wall: true, activity: 'notes', build: G((g, t) => { box(g, 0.8, 1.8, 0.7, '#e9ecef'); box(g, 0.04, 0.4, 0.04, '#999', 0.3, 1.1, 0.36); box(g, 0.04, 0.3, 0.04, '#999', 0.3, 0.5, 0.36); box(g, 0.78, 0.02, 0.02, '#bbb', 0, 1.0, 0.36); }) },
+  { id: 'counter', name: 'Kitchen counter', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.9, 0.85, 0.7, t.wood); box(g, 1.95, 0.06, 0.75, '#f8f9fa', 0, 0.85); box(g, 0.5, 0.05, 0.4, '#adb5bd', 0.4, 0.9); }) },
+  { id: 'bathtub', name: 'Bathtub', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.8, 0.6, 0.85, '#ffffff'); box(g, 1.6, 0.05, 0.65, '#8ecae6', 0, 0.5); ball(g, 0.1, '#ffd23f', 0.3, 0.6, 0); }) },
+  { id: 'piano', name: 'Piano', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => { box(g, 1.5, 1.1, 0.5, '#1b1b1b'); box(g, 1.4, 0.05, 0.25, '#ffffff', 0, 0.75, 0.3); for (let i = 0; i < 8; i++) box(g, 0.05, 0.03, 0.15, '#111', -0.55 + i * 0.16, 0.79, 0.27); }) },
+  { id: 'tree', name: 'Indoor tree', cat: 'Home', size: [1, 1], build: G((g, t) => { cyl(g, 0.25, 0.3, '#8d6e63'); cyl(g, 0.08, 1.0, '#6d4c41', 0, 0.3); ball(g, 0.5, '#3a7d44', 0, 1.6); ball(g, 0.35, '#4caf50', 0.25, 1.9, 0.1); }) },
 ];
 
+// every item = its model + cluster / description / style from catalogInfo.js
+export const CATALOG = [...BASE, ...MORE, ...TEAM].map((c) => ({ ...c, cluster: INFO[c.id]?.[0] || 'decor', desc: INFO[c.id]?.[1] || '', style: INFO[c.id]?.[2] || [] }));
 export const CATALOG_BY_ID = Object.fromEntries(CATALOG.map((c) => [c.id, c]));
 export const CATEGORIES = [...new Set(CATALOG.map((c) => c.cat))];
