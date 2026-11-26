@@ -13,7 +13,8 @@ export const CLUSTERS = [
   { id: 'decor', icon: '🌿', name: 'Plants & decor', blurb: 'Make it feel alive' },
   { id: 'walls', icon: '🪟', name: 'Walls & windows', blurb: 'Paintings, mirrors and curtains' },
   { id: 'kids', icon: '🧸', name: 'Kids & pets', blurb: 'Little ones and furry friends' },
-  { id: 'outdoor', icon: '🌤️', name: 'Outdoor & balcony', blurb: 'A corner of fresh air' },
+  { id: 'outdoor', icon: '🌤️', name: 'Outdoor & garden', blurb: 'A corner of fresh air' },
+  { id: 'party', icon: '🎉', name: 'Party', blurb: 'Celebrate anything, anytime' },
 ];
 
 export const STYLES = ['cozy', 'pastel', 'modern', 'retro', 'nature', 'night'];
@@ -132,4 +133,27 @@ export const INFO = {
   patio_chair: ['outdoor', 'A wicker chair for sunny corners.', ['nature', 'cozy']],
   patio_table: ['outdoor', 'A small round table for coffee outside.', ['nature', 'cozy']],
   fire_pit: ['outdoor', 'A glowing fire pit. Marshmallows are imaginary.', ['nature', 'night']],
+  // from the team's extra pieces (PR #51)
+  loveseat: ['living', 'A two-person seat made for leaning on each other.', ['cozy', 'pastel']],
+  bunk_bed: ['bedroom', 'Two beds in one. The top bunk is always claimed first.', ['pastel', 'retro']],
+  closet: ['bedroom', 'A tall closet for every outfit and one mystery box.', ['cozy', 'modern']],
+  coffee_machine: ['kitchen', 'A little coffee corner: the real morning engine.', ['modern', 'cozy']],
+  kitchen_sink: ['kitchen', 'A proper kitchen sink with a tall tap.', ['modern', 'cozy']],
+  pantry: ['kitchen', 'A cupboard of snacks, jars and secret chocolate.', ['cozy', 'retro']],
+  bath_sink: ['bath', 'A sink with a mirror, for teeth and dramatic selfies.', ['modern', 'pastel']],
+  bath_mat: ['bath', 'A soft mat for wet feet. Walkable.', ['pastel', 'cozy']],
+  balloon_arch: ['party', 'A big balloon arch: instant celebration.', ['pastel', 'retro']],
+  disco_ball: ['party', 'A sparkling disco ball. Every room is a dance floor now.', ['retro', 'night']],
+  dj_booth: ['party', 'A DJ booth with turntables. Requests accepted.', ['night', 'retro']],
+  speaker: ['party', 'A big speaker that is very much for decoration. And vibes.', ['night', 'retro']],
+  party_table: ['party', 'A table with cake and snacks. Please wait for the song.', ['pastel', 'cozy']],
+  gift_pile: ['party', 'A pile of wrapped presents. Shake gently.', ['pastel', 'cozy']],
+  bush: ['outdoor', 'A round, leafy bush for the garden.', ['nature']],
+  fence: ['outdoor', 'A little wooden fence to mark your patch.', ['nature', 'cozy']],
+  flower_bed: ['outdoor', 'A bed of flowers that never needs watering.', ['nature', 'pastel']],
+  fountain: ['outdoor', 'A wishing fountain. Make one. Keep it secret.', ['nature', 'pastel']],
+  picnic_table: ['outdoor', 'A picnic table for sandwiches in the sun.', ['nature', 'cozy']],
+  deck_chair: ['outdoor', 'A striped deck chair: lean back, do nothing.', ['nature', 'retro']],
+  garden_lamp: ['light', 'A garden lantern to light the evening path.', ['nature', 'cozy']],
+  teddy: ['kids', 'A giant teddy bear: the best hugger in the house.', ['pastel', 'cozy']],
 };

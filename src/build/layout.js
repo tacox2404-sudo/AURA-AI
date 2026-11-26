@@ -15,8 +15,10 @@ import { CATALOG_BY_ID } from './catalog.js';
 import { uid } from '../core/store.js';
 
 const WALL_PRIORITY = ['tv', 'fireplace', 'arcade', 'bookshelf', 'piano', 'bed', 'desk', 'fridge', 'counter', 'jukebox', 'portal',
-  'noticeboard', 'photo_frame', 'calendar_board', 'clock', 'link_board', 'checklist_board', 'weather_window', 'bathtub'];
-const PLANTS = ['plant', 'tall_plant', 'tree', 'cactus', 'fern'];
+  'noticeboard', 'photo_frame', 'calendar_board', 'clock', 'link_board', 'checklist_board', 'weather_window', 'bathtub',
+  'dj_booth', 'closet', 'bunk_bed', 'stove', 'kitchen_sink', 'pantry', 'coffee_machine', 'shower', 'bath_sink', 'toilet', 'dresser',
+  'loveseat', 'balloon_arch', 'fence'];
+const PLANTS = ['plant', 'tall_plant', 'tree', 'bush', 'cactus', 'fern'];
 const LAMPS = new Set(['lamp', 'table_lamp', 'lava_lamp']); // lamps sit beside the seating or the bed
 
 export function layoutItems(kinds, w, d) {
@@ -134,7 +136,7 @@ export function layoutItems(kinds, w, d) {
   }
 
   // nightstands go on either side of the bed
-  const bed = placed.bed || placed.single_bed;
+  const bed = placed.bed || placed.single_bed || placed.bunk_bed;
   if (bed) for (const kind of takeAll((k) => k === 'nightstand')) tryPlace(kind, [[bed.x - 1, bed.z, 0], [bed.x + defOf(bed.kind).size[0], bed.z, 0]], [0]);
 
   // ---- 4. loose pieces in a ring around the middle, turned to face it ----
@@ -162,7 +164,7 @@ export function layoutItems(kinds, w, d) {
   // ---- 5. plants in the corners, lamps by the seating ----
   const corners = [[0, 0], [w - 1, 0], [w - 1, d - 1], [0, d - 1]];
   for (const kind of takeAll((k) => PLANTS.includes(k))) tryPlace(kind, corners.map(([x, z]) => [x, z, 0]), [0]);
-  const bedItem = placed.bed || placed.single_bed;
+  const bedItem = placed.bed || placed.single_bed || placed.bunk_bed;
   const lampSpots = [...(sofaItem ? [[sofaItem.x + 2, sofaItem.z, 0], [sofaItem.x - 1, sofaItem.z, 0]] : []), ...(bedItem ? [[bedItem.x - 1, bedItem.z + 1, 0], [bedItem.x + defOf(bedItem.kind).size[0], bedItem.z + 1, 0]] : [])];
   for (const kind of takeAll((k) => LAMPS.has(k))) tryPlace(kind, [...lampSpots, [1, 1, 0], [w - 2, 1, 0], [0, 1, 0], [w - 1, 1, 0]], [0]);
 

@@ -18,41 +18,22 @@ export const MORE = [
     box(g, 0.95, 0.3, 1.95, t.wood); box(g, 0.88, 0.16, 1.8, '#ffffff', 0, 0.3); box(g, 0.9, 0.1, 1.05, t.accent, 0, 0.44, 0.35);
     box(g, 0.5, 0.1, 0.3, '#f4efe6', 0, 0.46, -0.7); box(g, 0.98, 0.75, 0.1, t.wood, 0, 0.3, -0.95);
   }) },
-  { id: 'nightstand', name: 'Nightstand', cat: 'Home', size: [1, 1], build: G((g, t) => { box(g, 0.5, 0.55, 0.45, t.wood); box(g, 0.4, 0.04, 0.02, '#333', 0, 0.38, 0.23); ball(g, 0.03, '#ffd23f', 0, 0.3, 0.24); }) },
   { id: 'wardrobe', name: 'Wardrobe', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => {
     box(g, 1.8, 1.9, 0.6, t.wood); box(g, 0.03, 1.6, 0.02, '#333', 0, 0.15, 0.31); ball(g, 0.04, '#ffd23f', -0.1, 1.0, 0.33); ball(g, 0.04, '#ffd23f', 0.1, 1.0, 0.33);
-  }) },
-  { id: 'dresser', name: 'Dresser', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => {
-    box(g, 1.7, 0.9, 0.55, t.wood); for (const y of [0.25, 0.5, 0.72]) box(g, 1.55, 0.03, 0.02, '#333', 0, y, 0.28); ball(g, 0.04, '#ffd23f', 0, 0.62, 0.29);
   }) },
   { id: 'vanity', name: 'Vanity + mirror', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => {
     legs(g, 0.9, 0.45, 0.7, t.wood); box(g, 0.95, 0.06, 0.5, t.wood, 0, 0.7); box(g, 0.62, 0.75, 0.04, t.wood, 0, 0.76, -0.2); box(g, 0.54, 0.67, 0.03, '#bde0fe', 0, 0.8, -0.17);
   }) },
 
   // ---------------- Kitchen & dining ----------------
-  { id: 'stove', name: 'Stove', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.8, 0.85, 0.7, '#dee2e6'); box(g, 0.8, 0.04, 0.7, '#2b2b2b', 0, 0.85); box(g, 0.6, 0.4, 0.02, '#343a40', 0, 0.2, 0.36);
-    for (const [x, z] of [[-0.18, -0.15], [0.18, -0.15], [-0.18, 0.15], [0.18, 0.15]]) cyl(g, 0.1, 0.02, '#555', x, 0.89, z, 12);
-  }) },
-  { id: 'kitchen_island', name: 'Kitchen island', cat: 'Tables', size: [2, 1], build: G((g, t) => {
-    box(g, 1.8, 0.85, 0.8, t.wood); box(g, 1.9, 0.06, 0.9, '#f8f9fa', 0, 0.85); cyl(g, 0.16, 0.08, '#fff', 0.4, 0.91, 0, 12, 0.2); ball(g, 0.06, '#ef476f', 0.38, 1.0, 0); ball(g, 0.06, '#ffd166', 0.44, 1.0, 0.04);
-  }) },
   { id: 'sink_counter', name: 'Sink counter', cat: 'Home', size: [2, 1], wall: true, build: G((g, t) => {
     box(g, 1.9, 0.85, 0.7, t.wood); box(g, 1.95, 0.06, 0.75, '#f8f9fa', 0, 0.85); box(g, 0.55, 0.05, 0.4, '#adb5bd', -0.3, 0.9); cyl(g, 0.025, 0.25, '#adb5bd', -0.3, 0.9, -0.25); box(g, 0.2, 0.03, 0.03, '#adb5bd', -0.3, 1.12, -0.17);
   }) },
   { id: 'bar_stool', name: 'Bar stool', cat: 'Seating', size: [1, 1], seatTop: 0.66, build: G((g, t) => { cyl(g, 0.04, 0.62, '#444', 0, 0.02); cyl(g, 0.18, 0.03, '#444'); cyl(g, 0.2, 0.07, t.accent, 0, 0.62, 0, 14); }) },
 
   // ---------------- Bathroom ----------------
-  { id: 'toilet', name: 'Toilet', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => { box(g, 0.4, 0.36, 0.5, '#ffffff', 0, 0, 0.05); box(g, 0.42, 0.04, 0.45, '#f1f3f5', 0, 0.38, 0.05); box(g, 0.4, 0.5, 0.16, '#ffffff', 0, 0.3, -0.27); box(g, 0.08, 0.04, 0.05, '#adb5bd', 0, 0.8, -0.27); }) },
   { id: 'sink', name: 'Sink', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => { cyl(g, 0.1, 0.7, '#ffffff', 0, 0, -0.05); box(g, 0.55, 0.14, 0.4, '#ffffff', 0, 0.7, -0.02); cyl(g, 0.025, 0.2, '#adb5bd', 0, 0.84, -0.18); box(g, 0.5, 0.35, 0.03, '#bde0fe', 0, 0.95, -0.27); }) },
-  { id: 'shower', name: 'Shower', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.92, 0.06, 0.92, '#e9ecef'); box(g, 0.92, 1.9, 0.03, '#a8dadc', 0, 0.06, 0.45, GLASS); box(g, 0.03, 1.9, 0.92, '#a8dadc', 0.45, 0.06, 0, GLASS);
-    cyl(g, 0.02, 1.7, '#adb5bd', -0.36, 0.06, -0.36); cyl(g, 0.1, 0.03, '#adb5bd', -0.3, 1.75, -0.3, 12);
-  }) },
   { id: 'bathmat', name: 'Bath mat', cat: 'Decor', size: [1, 1], floorOnly: true, build: G((g, t) => { box(g, 0.8, 0.03, 0.55, t.accent); box(g, 0.7, 0.035, 0.45, '#ffffff', 0, 0, 0); }) },
-  { id: 'towel_rack', name: 'Towel rack', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => {
-    box(g, 0.05, 1.2, 0.05, '#adb5bd', -0.3); box(g, 0.05, 1.2, 0.05, '#adb5bd', 0.3); box(g, 0.65, 0.04, 0.05, '#adb5bd', 0, 1.1); box(g, 0.25, 0.5, 0.04, '#ffffff', -0.1, 0.62, 0.02); box(g, 0.2, 0.4, 0.04, t.accent, 0.15, 0.72, 0.02);
-  }) },
   { id: 'laundry_basket', name: 'Laundry basket', cat: 'Home', size: [1, 1], build: G((g, t) => { cyl(g, 0.22, 0.45, '#d4a373', 0, 0, 0, 12, 0.28); cyl(g, 0.24, 0.03, '#bc8a5f', 0, 0.45, 0, 12); box(g, 0.25, 0.08, 0.2, '#ffffff', 0, 0.5, 0); }) },
 
   // ---------------- Games & fun ----------------
@@ -121,7 +102,6 @@ export const MORE = [
   { id: 'fish_tank', name: 'Fish tank', cat: 'Home', size: [1, 1], wall: true, build: G((g, t) => { box(g, 0.9, 0.5, 0.45, t.wood); box(g, 0.84, 0.55, 0.38, '#8ecae6', 0, 0.5, 0, GLASS); box(g, 0.84, 0.05, 0.38, '#a98467', 0, 0.5); for (const [x, y] of [[-0.2, 0.85], [0.15, 0.95], [0.05, 0.75]]) { const f = ball(g, 0.06, '#ff9f1c', x, y, 0); f.scale.set(1.5, 1, 0.8); } ball(g, 0.1, '#2d6a4f', 0.3, 0.62, 0); }) },
 
   // ---------------- Outdoor & balcony ----------------
-  { id: 'bbq', name: 'Barbecue', cat: 'Home', size: [1, 1], build: G((g, t) => { legs(g, 0.6, 0.5, 0.6, '#333'); cyl(g, 0.3, 0.25, '#222', 0, 0.6, 0, 14, 0.34); const lid = ball(g, 0.3, '#2b2b2b', 0, 0.9, 0); lid.scale.set(1, 0.6, 1); ball(g, 0.04, '#ff8800', 0.1, 0.85, 0.2, glow('#ff5500')); }) },
   { id: 'hammock', name: 'Hammock', cat: 'Home', size: [2, 1], build: G((g, t) => { cyl(g, 0.05, 1.3, '#6d4c41', -0.9); cyl(g, 0.05, 1.3, '#6d4c41', 0.9); const b = box(g, 1.7, 0.06, 0.55, t.accent, 0, 0.62); b.rotation.z = 0.0; box(g, 0.35, 0.12, 0.45, '#f4efe6', -0.55, 0.7); box(g, 1.2, 0.04, 0.5, t.accent, 0, 0.55); }) },
   { id: 'patio_chair', name: 'Patio chair', cat: 'Seating', size: [1, 1], seatTop: 0.5, build: G((g, t) => { legs(g, 0.5, 0.5, 0.42, '#6d4c41'); box(g, 0.55, 0.08, 0.55, '#c49a6c', 0, 0.42); box(g, 0.55, 0.55, 0.08, '#c49a6c', 0, 0.5, -0.24); box(g, 0.45, 0.08, 0.1, t.accent, 0, 0.52, 0.05); }) },
   { id: 'patio_table', name: 'Patio table', cat: 'Tables', size: [1, 1], build: G((g, t) => { cyl(g, 0.04, 0.65, '#6d4c41'); cyl(g, 0.36, 0.05, '#c49a6c', 0, 0.65, 0, 16); cyl(g, 0.22, 0.03, '#6d4c41', 0, 0.02, 0, 10); }) },

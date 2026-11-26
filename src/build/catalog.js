@@ -1,5 +1,5 @@
 // FURNITURE CATALOG (owned by Building).
-// The first 45 items live here; src/build/catalogMore.js has the rest; src/build/catalogInfo.js gives EVERY item
+// The first 43 items live here; src/build/catalogMore.js and catalogTeam.js (the team's 30 extra pieces) have the rest; src/build/catalogInfo.js gives EVERY item
 // its cluster, description and style tags (that is what the catalogue screen shows).
 // Item fields:
 //   id        unique id, saved in houses (never rename one that is in use)
@@ -13,6 +13,7 @@
 
 import { mat, box, cyl, ball, legs, board, G } from './shapes.js';
 import { MORE } from './catalogMore.js';
+import { TEAM } from './catalogTeam.js';
 import { INFO, CLUSTERS } from './catalogInfo.js';
 
 export { mat, CLUSTERS };
@@ -146,6 +147,6 @@ const BASE = [
 ];
 
 // every item = its model + cluster / description / style from catalogInfo.js
-export const CATALOG = [...BASE, ...MORE].map((c) => ({ ...c, cluster: INFO[c.id]?.[0] || 'decor', desc: INFO[c.id]?.[1] || '', style: INFO[c.id]?.[2] || [] }));
+export const CATALOG = [...BASE, ...MORE, ...TEAM].map((c) => ({ ...c, cluster: INFO[c.id]?.[0] || 'decor', desc: INFO[c.id]?.[1] || '', style: INFO[c.id]?.[2] || [] }));
 export const CATALOG_BY_ID = Object.fromEntries(CATALOG.map((c) => [c.id, c]));
 export const CATEGORIES = [...new Set(CATALOG.map((c) => c.cat))];
