@@ -36,6 +36,11 @@ const CSS = `
 .bb-info small { color: var(--ink-2); font-weight: 500; }
 .cat-open { flex: none; align-self: center; white-space: nowrap; }
 .sel-bar { align-items: center; }
+.bb-history { display: flex; gap: 6px; align-items: center; }
+.bb-history button:disabled { opacity: .35; }
+.bb-swatches { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.bb-swatch { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line); }
+.bb-swatch.on { box-shadow: 0 0 0 3px var(--accent); }
 `;
 
 /** Add the catalogue + build bar styles to the page (once). Build/index.js calls this when the game starts. */

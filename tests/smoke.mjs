@@ -35,6 +35,15 @@ function watch(page, who) {
   page.on('console', (m) => { if (m.type() === 'error' && !/favicon|404/.test(m.text())) errors.push(`[${who}] ${step}: console: ${m.text()}`); });
 }
 
+// The "new house" wizard may have extra steps (layout...). Keep pressing the main button until the house exists.
+async function finishHouseWizard(page) {
+  for (let i = 0; i < 5; i++) {
+    if (await page.evaluate(() => !!window.__ourplace.store.get().house)) return;
+    await page.click('.card.form .primary');
+    await page.waitForTimeout(700);
+  }
+}
+
 async function signUp(page, name) {
   await page.fill('input[placeholder=Username]', name);
   await page.fill('input[type=password]', 'secret123');
@@ -60,7 +69,7 @@ try {
     await a.click(`text=${type}`);
     await a.click('text=Next');
     await a.click(`text=${vibe}`);
-    await a.click('.card.form .primary');
+    await finishHouseWizard(a);
     await a.waitForTimeout(1200);
     if (await a.locator('text=Save look').count()) await a.click('text=Save look');
     await a.waitForTimeout(300);
@@ -211,7 +220,7 @@ try {
   await g.click('text=Solo Studio');
   await g.click('text=Next');
   await g.click('text=Modern loft');
-  await g.click('.card.form .primary');
+  await finishHouseWizard(g);
   await g.waitForTimeout(1500);
   if (await g.locator('text=Save look').count()) await g.click('text=Save look');
   await g.locator('.gd-text').waitFor({ timeout: 20000 }); // Pip shows up by himself
