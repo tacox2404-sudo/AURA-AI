@@ -9,7 +9,7 @@
 //    group 'main' (default) = the bottom bar (keep it to the few things people do all the time).
 //    group 'more'           = the "⋯ More" ribbon on the right edge (people, friends, scores, wardrobe, help).
 // ui.openRibbon() / ui.closeRibbon() / ui.setRibbonBadge(n)
-// ui.setTopbar({ title, tabs, active, onTab, right }) -> the top bar
+// ui.setTopbar({ title, tabs, active, onTab, left, right }) -> the top bar (`left` = your own element instead of title + tabs)
 
 export function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -121,7 +121,8 @@ export function createUI(root) {
     setRibbonBadge(n) { if (n > 0) ribbonHandle.setAttribute('data-badge', String(n)); else ribbonHandle.removeAttribute('data-badge'); },
     setDockVisible(on) { dock.classList.toggle('hidden', !on); topbar.classList.toggle('hidden', !on); ribbon.classList.toggle('hidden', !on); if (!on) setRibbon(false); },
 
-    setTopbar({ title = '', tabs = [], active = null, onTab, right = null }) {
+    setTopbar({ title = '', tabs = [], active = null, onTab, left = null, right = null }) {
+      if (left) return topbar.replaceChildren(h('div', { class: 'topbar-left' }, left), h('div', { class: 'topbar-right' }, right));
       topbar.replaceChildren(
         h('div', { class: 'topbar-title' }, title),
         h('div', { class: 'tabs' }, ...tabs.map((t) => h('button', { class: 'tab' + (t.id === active ? ' active' : ''), onclick: () => onTab?.(t.id) }, t.label))),
