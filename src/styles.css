@@ -40,6 +40,21 @@ h1, h2, h3, h4 { margin: .2em 0 .5em; }
 .tab { white-space: nowrap; background: #fff; border: 2px solid var(--line); padding: .3em .8em; font-size: .9rem; }
 .tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 .topbar-right { display: flex; align-items: center; gap: 6px; }
+.topbar-left { flex: 1; min-width: 0; }
+/* room switcher + dropdown */
+.room-switch { display: flex; align-items: center; gap: 6px; max-width: 100%; background: #fff; border: 2px solid var(--line); padding: .35em .9em; border-radius: 999px; font-weight: 700; }
+.room-switch .rs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-switch .rs-caret { color: var(--ink-2); }
+.room-menu { position: absolute; top: calc(env(safe-area-inset-top) + 58px); left: 8px; width: min(92vw, 360px); max-height: 66vh; overflow-y: auto; background: var(--paper); border-radius: 18px; box-shadow: var(--shadow); padding: 8px; z-index: 4; animation: ribbon-in .16s ease-out; }
+.rm-floor { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); font-weight: 800; margin: 8px 6px 4px; }
+.rm-floorbox { border-top: 1px solid var(--line); }
+.rm-online { padding-bottom: 4px; }
+.rm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; background: #fff; border: 2px solid transparent; border-radius: 14px; padding: .55em .8em; margin: 3px 0; }
+.rm-row.active { border-color: var(--accent); background: #fff5f8; }
+.rm-name { font-weight: 700; }
+.rm-who { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.rm-who i, .rm-row small { font-style: normal; font-size: .72rem; font-weight: 700; background: #dcfce7; color: #1b7f57; border-radius: 999px; padding: .1em .6em; }
+.rm-who i.rm-you { background: var(--accent-2); color: #fff; }
 .pill { background: #fff3c4; padding: .3em .7em; border-radius: 999px; font-weight: 700; font-size: .9rem; white-space: nowrap; }
 .pill.online { background: #dcfce7; }
 

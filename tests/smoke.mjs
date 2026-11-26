@@ -235,6 +235,16 @@ try {
   await g.waitForFunction(() => /Welcome back, tester_g/.test(document.querySelector('#al-form h3')?.textContent || '') && document.querySelector('#ourplace-username')?.value === 'tester_g', null, { timeout: 15000 });
   await gctx.close();
 
+  log('room menu: rooms by floor, who is where, tap a friend to go there');
+  await a.evaluate(() => { const o = window.__ourplace; const rooms = o.store.get().house.rooms; o.store.set({ players: [{ userId: 'fx', name: 'Mia', roomId: rooms[rooms.length - 1].id, x: 0, z: 0, avatar: null }] }); }); // a friend is online in the top room
+  await a.waitForTimeout(600);
+  await a.click('.room-switch');
+  const miaRow = a.locator('.room-menu .rm-online .rm-row', { hasText: 'Mia' });
+  await miaRow.waitFor({ timeout: 8000 });
+  await miaRow.click();
+  await a.waitForFunction(() => { const o = window.__ourplace; const s = o.store.get(); return s.roomId === s.house.rooms[s.house.rooms.length - 1].id; }, null, { timeout: 10000 });
+  await a.evaluate(() => window.__ourplace.store.set({ players: [] }));
+
   await a.screenshot({ path: 'tests/last-smoke.png' });
 } catch (e) {
   errors.push(`FAILED at "${step}": ${e.message}`);
