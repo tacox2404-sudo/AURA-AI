@@ -162,14 +162,15 @@ export function buildOutside(layout, house) {
   const wood = '#b07d4f', woodDark = '#8a5a35', rail = '#f4efe6', metal = '#4a4a55';
 
   // --- garden: grass all around, a stone path to the front door of the entrance
-  const grass = new THREE.Mesh(new THREE.BoxGeometry(90, 0.3, 90), mat('#8fc47a', { roughness: 1 }));
+  const grass = new THREE.Mesh(new THREE.BoxGeometry(90, 0.3, 90), new THREE.MeshStandardMaterial({ color: '#8fc47a', roughness: 1 })); // own material: seasons recolour it
+  const bushes = [];
   grass.position.set(layout.xMax / 2, -0.36, 4); grass.receiveShadow = true; group.add(grass);
   const entrance = layout.rooms.get(floors[0]?.rooms[0]);
   if (entrance) {
     for (let i = 0; i < 6; i++) box(group, 0.9, 0.06, 0.6, i % 2 ? '#d9d2c5' : '#cfc6b6', entrance.ox + entrance.w / 2 + Math.sin(i) * 0.15, -0.2, entrance.d + 0.7 + i * 0.85);
     // a few round bushes and a lamp post along the path
     for (const s of [-1, 1]) for (const k of [1.6, 4.2]) {
-      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0), mat(k > 2 ? '#5e9c5a' : '#6fae64')); b.position.set(entrance.ox + entrance.w / 2 + s * 1.6, 0.1, entrance.d + k); b.castShadow = true; group.add(b);
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0), new THREE.MeshStandardMaterial({ color: k > 2 ? '#5e9c5a' : '#6fae64', flatShading: true })); bushes.push(b); b.position.set(entrance.ox + entrance.w / 2 + s * 1.6, 0.1, entrance.d + k); b.castShadow = true; group.add(b);
     }
   }
 
@@ -268,5 +269,6 @@ export function buildOutside(layout, house) {
       group.add(s); signs.push({ sprite: s, floor: info.floor, room: id }); tapTargets.push(s);
     }
   }
-  return { group, perFloor, stairs, signs, tapTargets };
+  const bounds = { x0: -1, x1: stair.x + 2, z0: -1, z1: Math.max(...floors.map((f) => f.depth)) + 6, top: floors.length * FLOOR_H + 2 };
+  return { group, perFloor, stairs, signs, tapTargets, garden: { grass, bushes }, bounds };
 }
