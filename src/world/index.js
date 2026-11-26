@@ -22,6 +22,7 @@ import { initWardrobe } from './wardrobe.js';
 import { makeWalkGrid } from './walkGrid.js';
 import { layoutBuilding, findRoute, linkPath, buildOutside, FLOOR_H, ROOF, roofFootprint, roofItemDef } from './building.js';
 import { createRooftop } from './rooftop.js';
+import { createStreet } from './street.js';
 import { buildRoomMesh, setWallCut } from './roomMesh.js';
 import { buildWindows, lightAt, GLOWING } from './daylight.js';
 import { createPet } from './pet.js';
@@ -84,6 +85,7 @@ export function initWorld(ctx) {
   const viewFloor = () => (me.transit?.stairs ? Math.max(0, Math.min(topLevel(), Math.round((me.holder.position.y - 0.2) / FLOOR_H))) : curFloor());
   const onRoof = () => roomRef?.id === ROOF;
   let roofWalk = null; // walk grid of the rooftop
+  let street = null;   // the friends' street (street.js), made further down
   const roomCenter = (id) => layout.toGlobal(id, 0, 0);
   const toLocal = (id, g) => { const c = roomCenter(id); return new THREE.Vector3(g.x - c.x, 0, g.z - c.z); };
   const cellToLocal = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
@@ -115,6 +117,7 @@ export function initWorld(ctx) {
     outside = buildOutside(layout, house);
     houseGroup.add(outside.group);
     roofWalk = layout.roof ? makeWalkGrid(layout.roof.room, roofFootprint, roofItemDef) : null;
+    street?.build(layout); // the friends' street in front of the building
     sky.setOutside(outside);
     scene.add(houseGroup);
   }
@@ -212,7 +215,7 @@ export function initWorld(ctx) {
   const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), keys: new Set(), sit: null, pendingSit: null,
     run: false, faceAt: null, pendingFriend: null, transit: null, route: [], goal: null, wasMoving: false };
   scene.add(me.holder);
-  const clearPlans = () => { me.pendingSit = null; me.pendingFriend = null; me.pendingRoof = null; me.faceAt = null; me.route = []; me.goal = null; };
+  const clearPlans = () => { me.pendingSit = null; me.pendingFriend = null; me.pendingRoof = null; me.pendingStreet = null; me.faceAt = null; me.route = []; me.goal = null; };
   // first-person view: the camera at my avatar's eyes; drag to look around
   const fp = { on: false, yaw: 0, pitch: -0.05, last: null };
   let movingSelf = false; // true while I change room by walking (so the room change doesn't teleport me)
@@ -386,6 +389,11 @@ export function initWorld(ctx) {
     if (goal.type === 'item') useItem(goal.item);
     if (goal.type === 'seat') trySit(goal.item, goal.p);
     if (goal.type === 'roof') useRoofItem(goal.kind);
+    if (goal.type === 'street') { // walk to the front door, then out (see the arrival code in the loop)
+      const info = layout.rooms.get(roomRef.id);
+      me.path = walk.pathToCell(me.pos, { x: Math.floor(info.w / 2), z: info.d - 1 }) || [];
+      me.pendingStreet = { houseId: goal.houseId, name: goal.name };
+    }
   }
   /** Walk up to a piece of furniture in my room, face it, and open it. */
   function useItem(item) {
@@ -395,6 +403,12 @@ export function initWorld(ctx) {
     me.faceAt = cellToLocal(item.x, item.z, fw, fd);
     bounceItem(item.id);
     bus.emit('item:activate', { item, room: roomRef });
+  }
+  /** Tapped a friend's house on the street: walk out of the front door and over to theirs. */
+  function goStreet(target) {
+    if (!target || target.empty) { ui.toast('Add friends and ask them to open their house for visits 💌'); return ctx.use('social.openFriends')(); }
+    const entrance = layout.floors[0].rooms[0];
+    goTo(entrance, { type: 'street', houseId: target.houseId, name: target.name });
   }
   /** On the roof: walk up to the telescope / fireworks / hot tub / lounger, then use it. */
   function useRoofItem(kind) {
@@ -520,13 +534,16 @@ export function initWorld(ctx) {
       const friendHit = firstShown(ray.intersectObjects([...remotes.values()].map((r) => r.av), true));
       const stairHit = firstShown(ray.intersectObjects(outside.tapTargets.filter((o) => !o.isSprite), true));
       const liftHit = outside.elevator && firstShown(ray.intersectObject(outside.elevator.group, true));
+      const streetHit = street && firstShown(ray.intersectObjects(street.targets, true));
       const near = [petHit && { k: 'pet', d: petHit.distance }, friendHit && { k: 'friend', d: friendHit.distance, h: friendHit },
-        stairHit && { k: 'stairs', d: stairHit.distance, h: stairHit }, liftHit && { k: 'lift', d: liftHit.distance }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+        stairHit && { k: 'stairs', d: stairHit.distance, h: stairHit }, liftHit && { k: 'lift', d: liftHit.distance },
+        streetHit && { k: 'street', d: streetHit.distance, h: streetHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
       const solid = firstShown(ray.intersectObjects([...itemMeshes, ...floorMeshes], true));
       if (near && (!solid || near.d <= solid.distance + 0.3)) {
         if (near.k === 'pet') return tapPet();
         if (near.k === 'stairs') return useSign(near.h.object.userData);
         if (near.k === 'lift') return rooftop.openElevator();
+        if (near.k === 'street') return goStreet(near.h.object.userData.street);
         if (near.k === 'friend') { const id = [...remotes.entries()].find(([, r]) => isInside(near.h.object, r.av))?.[0]; if (id) return goToFriend(id); }
       }
     }
@@ -630,6 +647,8 @@ export function initWorld(ctx) {
     if (on) ui.toast('👁 First person: drag to look, tap to walk');
   }
   ctx.provide('world.firstPerson', (on) => setFirstPerson(on ?? !fp.on));
+  /** Walk out of the front door, along the street, to a friend's open house and go in. */
+  ctx.provide('world.walkToFriend', (houseId) => (layout ? goStreet({ houseId }) : false));
   /** Walk to a rooftop thing and use it: 'telescope' | 'fireworks' | 'hottub' | 'lounger' (from anywhere in the house). */
   ctx.provide('world.roofUse', (kind) => (layout?.roof ? (onRoof() ? useRoofItem(kind) : goTo(ROOF, { type: 'roof', kind })) : false));
 
@@ -699,6 +718,9 @@ export function initWorld(ctx) {
     rideTo: (level) => goTo(level === layout.roof?.floor ? ROOF : layout.floors[level].balcony.roomId, null, { elevator: true }),
   });
   const rooftop = createRooftop(ctx, host, world);
+  world.cellGlobal = (roomId, cell) => layout.cellGlobal(roomId, cell);
+  street = createStreet(ctx, world);
+  if (layout) street.build(layout);
   const pet = createPet(ctx, world);
   /** Ask the pet to do something: 'pet' | 'sit' | 'spin' | 'fetch' | 'come' (also used by the robot test). */
   ctx.provide('world.pet', (cmd) => pet.ask(cmd));
@@ -850,7 +872,7 @@ export function initWorld(ctx) {
         else { p.addScaledVector(d, step / len); step = 0; if (Math.hypot(d.x, d.z) > 0.01) turnToward(me.holder, Math.atan2(d.x, d.z), dt); }
       }
       moving = true;
-      if (tr.i >= tr.pts.length) finishTransit();
+      if (tr.i >= tr.pts.length) { if (tr.onDone) { me.transit = null; tr.onDone(); } else finishTransit(); }
     } else if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
       // keyboard: W walks AWAY from the camera, whatever way the camera is turned. Shift = run.
       const fx = fp.on ? Math.sin(fp.yaw) : -Math.sin(camYaw), fz = fp.on ? Math.cos(fp.yaw) : -Math.cos(camYaw);
@@ -881,6 +903,11 @@ export function initWorld(ctx) {
       if (me.pendingSit) startSit();
       else if (me.route.length) startTransit(me.route[0]);
       else if (me.pendingRoof) { const k = me.pendingRoof; me.pendingRoof = null; rooftop.use(k); }
+      else if (me.pendingStreet) {
+        const t = me.pendingStreet; me.pendingStreet = null;
+        const pts = street.walkPoints(t.houseId);
+        if (pts) { pts.unshift(me.holder.position.clone()); me.transit = { pts, i: 1, stairs: false, onDone: () => street.enter(t.houseId, t.name) }; }
+      }
       else if (me.pendingFriend) {
         const r = remotes.get(me.pendingFriend); me.pendingFriend = null;
         if (r && r.roomId === roomRef.id) { me.faceAt = new THREE.Vector3(r.local.x, 0, r.local.z); emotes.play('wave'); }
@@ -914,7 +941,7 @@ export function initWorld(ctx) {
       if (!t) bounces.delete(id);
     }
     pet.update(dt, { night: lastLight?.night || 0 });
-    together.update(dt); party.update(dt); ghosts.update(dt); rooftop.update(dt);
+    together.update(dt); party.update(dt); ghosts.update(dt); rooftop.update(dt); street.update(dt);
     // the elevator cab rides with me (when I'm inside it)
     if (me.transit?.elevator && outside.elevator) {
       const cab = outside.elevator.cab, p = me.holder.position;
@@ -955,9 +982,9 @@ export function initWorld(ctx) {
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
     if (s.house !== prev.house) pet.setHouse(s.house);
-    if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) ghosts.load().then(() => ghosts.lookForGhost()); }
+    if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) { ghosts.load().then(() => ghosts.lookForGhost()); street.refresh(); } }
     if (!s.house) {
-      if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); }
+      if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); if (street?.group) scene.remove(street.group); }
     } else {
       const room = currentRoom(s);
       const firstTime = !layout;
