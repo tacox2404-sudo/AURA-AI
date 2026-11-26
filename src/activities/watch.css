@@ -1,0 +1,6 @@
+/* "What should we watch next?" styles (owned by Activities). Reuses the trip planner chips/cards. */
+.watch .watch-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; vertical-align: middle; }
+.watch .watch-badge { color: #fff; font-size: .75rem; font-weight: 700; padding: .15em .6em; border-radius: 999px; text-decoration: none; }
+.watch .watch-top { border: 2px solid var(--accent-2, #7c5cff); }
+.watch .trip-idea .row-btns { margin-top: 6px; }
+.watch .btn.small, .watch button.small { font-size: .8rem; padding: .35em .7em; }
