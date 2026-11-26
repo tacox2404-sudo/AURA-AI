@@ -15,8 +15,10 @@ import { CATALOG_BY_ID } from './catalog.js';
 import { uid } from '../core/store.js';
 
 const WALL_PRIORITY = ['tv', 'fireplace', 'arcade', 'bookshelf', 'piano', 'bed', 'desk', 'fridge', 'counter', 'jukebox', 'portal',
-  'noticeboard', 'photo_frame', 'calendar_board', 'clock', 'link_board', 'checklist_board', 'weather_window', 'bathtub'];
-const PLANTS = ['plant', 'tall_plant', 'tree'];
+  'noticeboard', 'photo_frame', 'calendar_board', 'clock', 'link_board', 'checklist_board', 'weather_window', 'bathtub',
+  'dj_booth', 'closet', 'bunk_bed', 'stove', 'kitchen_sink', 'pantry', 'coffee_machine', 'shower', 'bath_sink', 'toilet', 'dresser',
+  'loveseat', 'balloon_arch', 'fence'];
+const PLANTS = ['plant', 'tall_plant', 'tree', 'bush'];
 
 export function layoutItems(kinds, w, d) {
   const occ = Array.from({ length: d }, () => Array(w).fill(false));
