@@ -1,6 +1,43 @@
 // LOGIN, HOUSE PICKER and ONBOARDING screens (owned by Social).
 import { tagline, loadingLine } from './fun.js';
 
+// ---- remembering the player on this device ----
+const LAST_USER = 'op:lastUser';
+const safeGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
+/** True when OurPlace was opened from the home screen (full-screen app mode). */
+export const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { return false; } };
+/** Remember the username for "Welcome back", and let the browser's password manager save the login (Chrome/Android). */
+function rememberLogin(username, password) {
+  safeSet(LAST_USER, username.trim());
+  try {
+    if (window.PasswordCredential && navigator.credentials?.store) {
+      // the browser may refuse later (no password service, private window...): that must never be an error for the player
+      Promise.resolve(navigator.credentials.store(new PasswordCredential({ id: username.trim(), password }))).catch(() => {});
+    }
+  } catch { /* not supported */ }
+}
+
+/** A small "add me to your home screen" card for phones (not shown inside the installed app). */
+export function installTip(ctx, installEvent) {
+  const { h } = ctx.ui;
+  if (isStandalone() || safeGet('op:tip:install') === 'x') return null;
+  const ua = navigator.userAgent || '';
+  const ios = /iPhone|iPad|iPod/.test(ua), android = /Android/.test(ua);
+  if (!ios && !android) return null;
+  const card = h('div', { class: 'card al-install' });
+  const close = () => { safeSet('op:tip:install', 'x'); card.remove(); };
+  card.append(h('b', {}, '📲 Get the app feel'),
+    h('p', { class: 'muted small', style: { margin: '.3em 0 .5em' } },
+      ios ? 'In Safari, tap Share ⎙ then "Add to Home Screen". OurPlace opens full screen like an app, and stays logged in.'
+        : installEvent ? 'Add OurPlace to your home screen: it opens full screen like an app and stays logged in.'
+          : 'In Chrome, open the ⋮ menu and tap "Install app" (or "Add to Home screen").'),
+    h('div', { class: 'row-btns' },
+      installEvent ? h('button', { class: 'primary', onclick: async () => { try { await installEvent.prompt(); } catch { /* cancelled */ } close(); } }, 'Install app') : null,
+      h('button', { class: 'link', onclick: close }, 'Not now')));
+  return card;
+}
+
 // Turns technical errors (from Supabase or the browser) into short, friendly sentences.
 export function friendly(message = '') {
   const m = String(message).toLowerCase();
@@ -67,6 +104,11 @@ function injectLandingStyles() {
     .al .al-grid.s, .al .al-grid.w { grid-template-columns: repeat(3, 1fr); }
   }
   @media (min-width: 560px) and (max-width: 859px) { .al .al-grid.f { grid-template-columns: repeat(2, 1fr); } }
+  .house-card.go { background: var(--accent); color: #fff; }
+  .house-card.go small { color: rgba(255,255,255,.9); }
+  .al-install { border: 2px dashed var(--accent-2); }
+  .remember { display: flex; gap: .5em; align-items: center; margin: .6em 0; }
+  .remember input { width: auto; }
   `;
   document.head.appendChild(st);
 }
@@ -74,20 +116,29 @@ function injectLandingStyles() {
 export function loginScreen(ctx, { onDone, invited = false }) {
   const { ui, backend } = ctx; const { h } = ui;
   injectLandingStyles();
-  const user = h('input', { placeholder: 'Username', autocomplete: 'username', maxlength: 20 });
-  const pass = h('input', { placeholder: 'Password', type: 'password', autocomplete: 'current-password' });
+  const remembered = invited ? '' : safeGet(LAST_USER) || ''; // "Welcome back" when we know this device
+  // name / id / autocomplete are what let the phone's password manager recognise and save this login
+  const user = h('input', { placeholder: 'Username', name: 'username', id: 'ourplace-username', autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', maxlength: 20, value: remembered });
+  const pass = h('input', { placeholder: 'Password', name: 'password', id: 'ourplace-password', type: 'password', autocomplete: 'current-password' });
   const err = h('p', { class: 'error' });
-  const go = (fn) => async () => {
+  const heading = h('h3', { style: { margin: '0 0 .4em' } }, remembered ? `Welcome back, ${remembered} 👋` : invited ? 'Join the house' : 'Come on in');
+  const go = (fn, isNew = false) => async () => {
     err.textContent = '';
     err.className = 'muted'; err.textContent = loadingLine(); // a silly line while we wait
-    try { onDone(await fn(user.value, pass.value)); } catch (e) { err.className = 'error'; err.textContent = friendly(e.message); }
+    if (isNew) pass.setAttribute('autocomplete', 'new-password'); // tells the phone this is a NEW password to save
+    try { const u = await fn(user.value, pass.value); rememberLogin(user.value, pass.value); onDone(u); }
+    catch (e) { err.className = 'error'; err.textContent = friendly(e.message); }
+    finally { pass.setAttribute('autocomplete', 'current-password'); }
   };
-  const form = h('div', { class: 'card form al-form', id: 'al-form' },
-    h('h3', { style: { margin: '0 0 .4em' } }, invited ? 'Join the house' : 'Come on in'),
-    user, pass, err,
+  const logIn = go((u, p) => backend.signIn(u, p));
+  const notYou = remembered ? h('button', { type: 'button', class: 'link', onclick: () => { safeSet(LAST_USER, ''); user.value = ''; heading.textContent = 'Come on in'; notYou.remove(); user.focus(); } }, 'Not you? Use another account') : null;
+  const form = h('form', { class: 'card form al-form', id: 'al-form', autocomplete: 'on', onsubmit: (e) => { e.preventDefault(); logIn(); } },
+    heading, user, pass, err,
     h('div', { class: 'row-btns' },
-      h('button', { class: 'primary', onclick: go((u, p) => backend.signIn(u, p)) }, 'Log in'),
-      h('button', { onclick: go((u, p) => backend.signUp(u, p)) }, 'Create account')),
+      h('button', { type: 'submit', class: 'primary' }, 'Log in'),
+      h('button', { type: 'button', onclick: go((u, p) => backend.signUp(u, p), true) }, 'Create account')),
+    notYou,
+    isStandalone() && !remembered ? h('p', { class: 'muted small' }, 'Log in once in this app. After that, OurPlace remembers you.') : null,
     backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: accounts live in this browser only. Open a second tab with another account to play together.') : null);
 
   // the tagline changes every few seconds
@@ -122,20 +173,34 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     h('p', { class: 'al-foot' }, 'Free, friendly and non-commercial. Made with 💛 by the OurPlace team.')));
 }
 
-export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, onFriends, joinCode = '' }) {
+// The player's Home page. With welcome: true it greets a returning player ("Welcome back") with a big
+// Continue button for the last house, pending friend requests, the install tip and a "go straight in" option.
+export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogout, onFriends, joinCode = '',
+  welcome = false, lastId = null, pending = 0, install = null, autoEnter = false, onAutoEnter }) {
   const { ui } = ctx; const { h } = ui;
+  injectLandingStyles();
   const code = h('input', { placeholder: 'Invite code, e.g. K7Q2XD', value: joinCode, maxlength: 12, style: { textTransform: 'uppercase' } });
   const err = h('p', { class: 'error' });
+  const emoji = (house) => ({ love: '💞', friends: '🛋️', family: '🏡', solo: '🎨' }[house.type] || '🏠');
+  const last = welcome && lastId ? houses.find((x) => x.id === lastId) : null;
+  const card = (house, go = false) => h('button', { class: 'house-card' + (go ? ' go' : ''), onclick: () => onOpen(house) },
+    h('span', { class: 'big' }, emoji(house)),
+    h('span', {}, h('b', {}, go ? `Continue to ${house.name}` : house.name),
+      h('small', {}, go ? `Pick up where you left off · ${house.rooms?.length || 0} rooms` : `${house.rooms?.length || 0} rooms · you are ${house.members?.[me.id]?.role || 'member'}`)));
+  const others = last ? houses.filter((x) => x.id !== last.id) : houses;
   ui.screen(h('div', { class: 'screen' },
-    h('div', { class: 'screen-head' }, h('h2', {}, `Hi ${me.username} 👋`), h('button', { class: 'link', onclick: onLogout }, 'Log out')),
-    houses.length ? h('div', { class: 'list' }, ...houses.map((house) => h('button', { class: 'house-card', onclick: () => onOpen(house) },
-      h('span', { class: 'big' }, { love: '💞', friends: '🛋️', family: '🏡', solo: '🎨' }[house.type] || '🏠'),
-      h('span', {}, h('b', {}, house.name), h('small', {}, `${house.rooms?.length || 0} rooms · you are ${house.members?.[me.id]?.role || 'member'}`)))))
+    h('div', { class: 'screen-head' }, h('h2', {}, welcome ? `Welcome back, ${me.username} 👋` : `Hi ${me.username} 👋`), h('button', { class: 'link', onclick: onLogout }, 'Log out')),
+    last ? h('div', { class: 'list' }, card(last, true)) : null,
+    pending > 0 && onFriends ? h('div', { class: 'card' }, h('button', { class: 'wide', onclick: onFriends }, `💌 ${pending} friend request${pending > 1 ? 's' : ''} waiting`)) : null,
+    install,
+    houses.length ? h('div', {}, last && others.length ? h('h4', {}, 'Your other houses') : null, others.length ? h('div', { class: 'list' }, ...others.map((house) => card(house))) : null)
       : h('p', { class: 'muted' }, "You don't have a house yet. Create one, or join a friend's with their code."),
     h('div', { class: 'card' }, h('button', { class: 'primary wide', onclick: onCreate }, '＋ Create a new house')),
     onFriends ? h('div', { class: 'card' }, h('button', { class: 'wide', onclick: onFriends }, '🤝 Friends')) : null,
     h('div', { class: 'card form' }, h('h4', {}, 'Join a house'), code, err,
-      h('button', { class: 'wide', onclick: async () => { err.textContent = ''; try { await onJoin(code.value); } catch (e) { err.textContent = friendly(e.message); } } }, 'Join'))));
+      h('button', { class: 'wide', onclick: async () => { err.textContent = ''; try { await onJoin(code.value); } catch (e) { err.textContent = friendly(e.message); } } }, 'Join')),
+    welcome && houses.length && onAutoEnter ? h('label', { class: 'remember muted small' },
+      h('input', { type: 'checkbox', checked: autoEnter, onchange: (e) => onAutoEnter(e.target.checked) }), 'Go straight into my last house when I open the app') : null));
 }
 
 export function onboarding(ctx, { me, onDone, onCancel }) {

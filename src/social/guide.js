@@ -128,7 +128,9 @@ export function createGuide(ctx) {
         full = step.say; shown = 0; text.textContent = '';
         setMood(step.mood); pip.classList.add('talk');
         clearInterval(typing);
-        typing = setInterval(() => { shown += 1; text.textContent = full.slice(0, shown); if (shown >= full.length) completeText(); }, 22);
+        // typewriter by real elapsed time (not by timer ticks), so a slow phone catches up instead of crawling
+        const t0 = performance.now();
+        typing = setInterval(() => { shown = Math.min(full.length, Math.floor((performance.now() - t0) / 22) + 1); text.textContent = full.slice(0, shown); if (shown >= full.length) completeText(); }, 22);
         btns.replaceChildren();
         if (step.choices) btns.append(...step.choices.map((c, k) => h('button', { class: 'gd-choice' + (k === 0 ? ' first' : ''), onclick: () => finish(c.value) }, c.label)));
         else {
