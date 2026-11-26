@@ -1,0 +1,5 @@
+/* Video call styles (owned by Activities). */
+.call .call-live { border: 2px solid #2bb673; }
+.call .call-note { font-size: .8rem; text-align: center; }
+.call .row-btns .btn, .call .row-btns button { min-height: 40px; }
+.call label.row { margin-top: 8px; font-size: .9rem; }
