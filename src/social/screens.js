@@ -10,7 +10,12 @@ export const isStandalone = () => { try { return matchMedia('(display-mode: stan
 /** Remember the username for "Welcome back", and let the browser's password manager save the login (Chrome/Android). */
 function rememberLogin(username, password) {
   safeSet(LAST_USER, username.trim());
-  try { if (window.PasswordCredential && navigator.credentials?.store) navigator.credentials.store(new PasswordCredential({ id: username.trim(), password })); } catch { /* not supported */ }
+  try {
+    if (window.PasswordCredential && navigator.credentials?.store) {
+      // the browser may refuse later (no password service, private window...): that must never be an error for the player
+      Promise.resolve(navigator.credentials.store(new PasswordCredential({ id: username.trim(), password }))).catch(() => {});
+    }
+  } catch { /* not supported */ }
 }
 
 /** A small "add me to your home screen" card for phones (not shown inside the installed app). */
