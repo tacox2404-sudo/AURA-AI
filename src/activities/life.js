@@ -246,6 +246,7 @@ export const LIFE = {
       const title = h('input', { placeholder: 'Add a movie or show to watch together' });
       const unwatched = list.filter((m) => !m.watched);
       return h('div', {},
+        h('button', { class: 'primary wide', onclick: () => api.open('watch', { key: 'house:watch-next' }) }, '✨ What should we watch next? (genre + time + where to stream)'),
         h('div', { class: 'row-btns' },
           h('button', { class: 'primary', onclick: () => { if (!unwatched.length) return api.toast('Add some movies first'); const pick = unwatched[Math.floor(Math.random() * unwatched.length)]; api.toast(`🎬 Tonight: ${pick.title}`); api.ctx.use('chat.send')(`🎬 Movie night pick: ${pick.title}`); } }, '🎲 Pick for us'),
           h('a', { class: 'btn', href: 'https://www.youtube.com/', target: '_blank', rel: 'noopener' }, '▶ Open YouTube')),
