@@ -28,6 +28,7 @@ import { initEmotes, floatEmoji } from './emotes.js';
 import { initTogether } from './together.js';
 import { initParty } from './party.js';
 import { initGhosts } from './ghosts.js';
+import { createSky } from './sky.js';
 import { currentRoom } from '../core/store.js';
 
 export function initWorld(ctx) {
@@ -62,6 +63,9 @@ export function initWorld(ctx) {
   }
   addEventListener('resize', resize); resize();
 
+  // live window skies, real weather, seasons (sky.js)
+  const sky = createSky(ctx);
+
   // ---------- the building ----------
   let layout = null;          // where every room is (building.js)
   const rooms = new Map();    // roomId -> { info, mesh, walk, win }
@@ -84,6 +88,7 @@ export function initWorld(ctx) {
   function buildHouse(house) {
     if (houseGroup) scene.remove(houseGroup);
     houseGroup = new THREE.Group(); rooms.clear();
+    sky.refresh(); sky.clearLabels(); // works out my city and my partner's city first
     const footprint = ctx.use('build.footprint'), itemDef = ctx.use('build.itemDef'), itemMesh = ctx.use('build.itemMesh');
     const walks = new Map(house.rooms.map((r) => [r.id, makeWalkGrid(r, footprint, itemDef)]));
     layout = layoutBuilding(house, walks);
@@ -95,13 +100,17 @@ export function initWorld(ctx) {
       const avoid = [];
       for (const l of layout.links) { if (l.a === room.id) avoid.push(l.cellA); if (l.b === room.id) avoid.push(l.cellB); }
       if (info.floor === 0 && info.index === 0) avoid.push({ x: Math.floor(room.size[0] / 2), z: room.size[1] - 1 });
-      const win = buildWindows(room, walks.get(room.id), sides, avoid);
+      const win = buildWindows(room, walks.get(room.id), sides, avoid, { home: sky.textures.home, partner: sky.hasPartner() ? sky.textures.partner : null });
       mesh.group.add(win.group);
+      // the window to my partner's city gets a little sign under it
+      const pw = win.windows.find((x) => x.partner);
+      if (pw) { const label = sky.makeLabel(); label.position.set(0, 0.98, 0.22); pw.group.add(label); }
       houseGroup.add(mesh.group);
       rooms.set(room.id, { info, mesh, walk: walks.get(room.id), win });
     }
     outside = buildOutside(layout, house);
     houseGroup.add(outside.group);
+    sky.setOutside(outside);
     scene.add(houseGroup);
   }
 
@@ -161,9 +170,9 @@ export function initWorld(ctx) {
   const params = new URLSearchParams(location.search);
   const forcedHour = params.has('hour') ? Number(params.get('hour')) : NaN;
   let lastLight = null; let lightCheck = 0;
+  const myHour = () => { const d = new Date(); return Number.isFinite(forcedHour) ? forcedHour : d.getHours() + d.getMinutes() / 60; };
   function applyDaylight() {
-    const d = new Date();
-    const hour = Number.isFinite(forcedHour) ? forcedHour : d.getHours() + d.getMinutes() / 60;
+    const hour = myHour();
     const light = lightAt(hour);
     lastLight = light;
     hemi.intensity = light.hemi; sun.intensity = light.sunI; sun.color.copy(light.sun);
@@ -218,7 +227,6 @@ export function initWorld(ctx) {
     const free = walk ? walk.nearestFree(p.x, p.z) : p; // never inside furniture
     me.pos.set(free.x, 0, free.z);
     placeHolder();
-    pet.place(walk, me.pos, roomCenter(roomRef.id));
     sendPresence(true);
   }
   function placeHolder() {
@@ -321,7 +329,6 @@ export function initWorld(ctx) {
     movingSelf = false;
     if (roomRef?.id !== leg.to && room) enterRoom(room);
     const p = toLocal(leg.to, end); me.pos.set(p.x, 0, p.z);
-    pet.place(walk, me.pos, roomCenter(leg.to)); // the pet follows me in
     sendPresence(true);
     if (me.route.length) startLeg(); else doGoal();
   }
@@ -568,6 +575,16 @@ export function initWorld(ctx) {
       else goTo(roomId, { type: 'point', p: new THREE.Vector3(p.x, 0, p.z), run });
     },
   };
+  Object.assign(world, {
+    walkOf: (roomId) => rooms.get(roomId)?.walk || null,
+    roomItems: (roomId) => rooms.get(roomId)?.info.room.items || [],
+    footprint: (item) => ctx.use('build.footprint')(item),
+    roomFloor: (roomId) => layout?.rooms.get(roomId)?.floor ?? -1,
+    viewFloor: () => (layout && roomRef ? viewFloor() : 0),
+  });
+  const pet = createPet(ctx, world);
+  /** Ask the pet to do something: 'pet' | 'sit' | 'spin' | 'fetch' | 'come' (also used by the robot test). */
+  ctx.provide('world.pet', (cmd) => pet.ask(cmd));
   const together = initTogether(ctx, host, world);
   const party = initParty(ctx, world);
   ghosts = initGhosts(ctx, host, world);
@@ -604,14 +621,12 @@ export function initWorld(ctx) {
     me.pendingFriend = userId;
   }
 
-  // ---------- pet ----------
-  const pet = createPet(scene);
+  // ---------- pet (pet.js: the same pet for everyone, with tricks) ----------
   let lastPetPoints = 0;
   function tapPet() {
-    const info = pet.pet(); if (!info) return;
-    ui.toast(info.kind === 'cat' ? `${info.name} purrs 💕` : `${info.name} wags happily 🐾`);
+    pet.tap();
     const now = Date.now();
-    if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${info.name}` }); }
+    if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${pet.name}` }); }
   }
 
   // ---------- sitting ----------
@@ -780,10 +795,11 @@ export function initWorld(ctx) {
       if (mesh) mesh.scale.setScalar(1 + Math.sin((t / 0.35) * Math.PI) * 0.06);
       if (!t) bounces.delete(id);
     }
-    pet.update(dt, { me: { x: me.pos.x, z: me.pos.z, sitting: !!me.sit }, walk, night: lastLight?.night || 0 });
+    pet.update(dt, { night: lastLight?.night || 0 });
     together.update(dt); party.update(dt); ghosts.update(dt);
     lightCheck -= dt;
     if (lightCheck <= 0) { lightCheck = 30; applyDaylight(); } // the light follows the clock
+    sky.update(dt, myHour(), lastLight?.night || 0);
 
     // camera: smooth turn toward the chosen angle; look at my room (or at me on the stairs).
     camYaw += (camYawTarget - camYaw) * Math.min(1, dt * 7);
@@ -806,7 +822,7 @@ export function initWorld(ctx) {
   host.append(fade);
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
-    if (s.house !== prev.house) pet.setHouse(s.house); // before the room, so spawn() can place the pet
+    if (s.house !== prev.house) pet.setHouse(s.house);
     if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) ghosts.load().then(() => ghosts.lookForGhost()); }
     if (!s.house) {
       if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); }

@@ -41,11 +41,13 @@ export const GLOWING = { lamp: 1.45, candles: 0.45, fireplace: 0.5, tv: 1.0, arc
  * avoid: cells with a door in them (no window right next to a door).
  * Returns { group, windows: [{ group, out }], update(light) }.
  */
-export function buildWindows(room, walk, sides, avoid = []) {
+export function buildWindows(room, walk, sides, avoid = [], skies = null) {
   const [w, d] = room.size;
   const group = new THREE.Group();
   const nearDoor = (x, z) => avoid.some((c) => Math.abs(c.x - x) <= 1 && Math.abs(c.z - z) <= 1);
-  const glassMat = new THREE.MeshBasicMaterial({ color: '#bfe3ff' });
+  // the glass shows a live sky picture (sky.js); the first window can show the partner's city instead
+  const glassMat = new THREE.MeshBasicMaterial({ color: skies ? '#ffffff' : '#bfe3ff', map: skies?.home || null });
+  const partnerMat = skies?.partner ? new THREE.MeshBasicMaterial({ map: skies.partner }) : null;
   const frameMat = new THREE.MeshStandardMaterial({ color: '#fffaf0', roughness: 0.6 });
   const sillMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(room.theme.wood || '#a47148'), roughness: 0.7 });
   const windows = [];
@@ -65,13 +67,15 @@ export function buildWindows(room, walk, sides, avoid = []) {
       g.position.set(ox ? ox * w / 2 - ox * 0.02 : p.x, 0, oz ? oz * d / 2 - oz * 0.02 : p.z); g.rotation.y = ry;
       const bar = (bw, bh, x, y, z = 0.03) => { const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.06), frameMat); m.position.set(x, y, z); g.add(m); };
       // glass on both faces of the wall, so the window shows from outside too
-      for (const z of [0.01, -0.25]) { const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.85), glassMat); glass.position.set(0, 1.65, z); if (z < 0) glass.rotation.y = Math.PI; g.add(glass); }
+      const mine = windows.length === 0 && partnerMat ? partnerMat : glassMat;
+      for (const z of [0.01, -0.25]) { const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.85), mine); glass.position.set(0, 1.65, z); if (z < 0) glass.rotation.y = Math.PI; g.add(glass); }
       for (const z of [0.03, -0.27]) { bar(0.92, 0.07, 0, 2.1, z); bar(0.92, 0.07, 0, 1.2, z); bar(0.07, 0.95, -0.43, 1.65, z); bar(0.07, 0.95, 0.43, 1.65, z); bar(0.04, 0.85, 0, 1.65, z); bar(0.8, 0.04, 0, 1.65, z); }
       const sill = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.16), sillMat); sill.position.set(0, 1.17, 0.07); g.add(sill);
-      group.add(g); windows.push({ group: g, out });
+      group.add(g); windows.push({ group: g, out, partner: mine === partnerMat });
     }
   }
   function update(light) {
+    if (skies) return; // the live sky picture already follows the time of day
     // by day the glass shows the sky; at night it glows a little warm (lights on inside)
     glassMat.color.copy(light.sky).lerp(new THREE.Color('#ffffff'), 0.15 * (1 - light.night)).lerp(new THREE.Color('#ffd28a'), 0.35 * light.night);
   }
