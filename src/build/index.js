@@ -6,6 +6,7 @@ import { CATALOG_BY_ID } from './catalog.js';
 import { openCatalogue, injectBuildStyles } from './catalogue.js';
 import { thumbInto, thumbFor } from './thumbs.js';
 import { VIBES, HOUSE_TYPES, makeHouseDraft, makeRoom, arrangeRoom } from './templates.js';
+import { BLUEPRINTS, EXTRAS, MAIN_ROOMS, MAX_BEDROOMS, MAX_BATHROOMS, MAX_ROOMS, presetsFor, choicesOf, planRooms, summaryOf } from './presets.js';
 import { createAiRoom } from './aiRoom.js';
 import { canEdit, currentRoom, uid } from '../core/store.js';
 
@@ -35,6 +36,14 @@ export function initBuild(ctx) {
   ctx.provide('build.catalog', () => CATALOG_BY_ID);
   ctx.provide('build.makeHouse', (answers) => makeHouseDraft(answers));
   ctx.provide('build.houseTypes', () => HOUSE_TYPES);
+  // for the "new house" wizard (Social): the layout presets and a live preview of the rooms a set of choices gives
+  ctx.provide('build.layoutOptions', (type) => ({
+    presets: presetsFor(type).map((p) => ({ id: p.id, name: p.name, emoji: p.emoji, blurb: p.blurb, choices: choicesOf(p), rooms: planRooms(type, choicesOf(p)).length })),
+    mains: MAIN_ROOMS[type] || MAIN_ROOMS.solo,
+    extras: [...EXTRAS].sort((a, b) => Number(b.for.includes(type)) - Number(a.for.includes(type))).map((e) => ({ id: e.id, name: e.name, emoji: e.emoji, recommended: e.for.includes(type) })),
+    maxBedrooms: MAX_BEDROOMS, maxBathrooms: MAX_BATHROOMS, maxRooms: MAX_ROOMS,
+  }));
+  ctx.provide('build.planRooms', (type, choices) => { const plan = planRooms(type, choices).map((r) => ({ ...r, emoji: BLUEPRINTS[r.blueprint]?.emoji || '🚪' })); return { plan, ...summaryOf(plan) }; });
   ctx.provide('build.vibes', () => VIBES);
 
   injectBuildStyles();
