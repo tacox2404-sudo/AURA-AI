@@ -132,6 +132,26 @@ export function animateAvatar(av, dt, moving, run = false) {
   if (moving) u.body.rotation.x = run ? 0.12 : 0.04; // lean forward a little when walking
   else u.head.rotation.y = Math.sin(u.phase * 0.23) * 0.15; // idle: look around slowly
   if (u.emote) playPose(u, u.emote, false);
+  // holding hands: one arm reaches out to the side, toward the other person (set with setHolding)
+  if (u.holding && !(u.emote && u.emote.name !== 'wave')) {
+    const arm = u.holding === 'left' ? u.armL : u.armR; const s = u.holding === 'left' ? -1 : 1;
+    arm.rotation.z = s * 0.55; arm.rotation.x = -0.15;
+  }
+}
+
+/** Holding hands: 'left' or 'right' arm reaches out, or null to let go. */
+export function setHolding(av, side) { av.userData.holding = side || null; }
+
+/** Make an avatar look like a glowing see-through ghost (for memory ghosts). Changes only this avatar. */
+export function ghostify(av, color = '#bfe3ff') {
+  av.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = o.material.clone();
+    Object.assign(o.material, { transparent: true, opacity: 0.45, depthWrite: false });
+    if (o.material.emissive) o.material.emissive.set(color), (o.material.emissiveIntensity = 0.6);
+    o.castShadow = false;
+  });
+  return av;
 }
 
 // lift the whole avatar (body + legs) off the floor, for jumping
@@ -153,6 +173,11 @@ function playPose(u, e, sitting) {
     case 'sleep': u.head.rotation.z = 0.35; u.head.rotation.x = 0.25; u.armL.rotation.x = u.armR.rotation.x = -0.2; break;
     case 'jump': if (!sitting) { const k = (t * 2.2) % 1; av_lift(u, Math.sin(k * Math.PI) * 0.55); u.legL.rotation.x = u.legR.rotation.x = 0.3; }
       u.armL.rotation.z = -2.2; u.armR.rotation.z = 2.2; break;
+    case 'hug': // both arms forward and round, a little lean in
+      u.armL.rotation.x = u.armR.rotation.x = -1.35; u.armL.rotation.z = 0.35; u.armR.rotation.z = -0.35;
+      u.body.rotation.x = 0.12; u.head.rotation.z = 0.15; break;
+    case 'highfive': // right hand up and forward, a little slap at the start
+      u.armR.rotation.x = -2.5 + Math.max(0, 0.4 - t) * 1.5; u.armR.rotation.z = 0.2; break;
     case 'dance': {
       if (!sitting) { u.body.rotation.y = Math.sin(t * 6) * 0.5; u.legL.rotation.x = Math.max(0, Math.sin(t * 12)) * 0.6; u.legR.rotation.x = Math.max(0, -Math.sin(t * 12)) * 0.6;
         u.body.position.y = Math.abs(Math.sin(t * 12)) * 0.08; }
