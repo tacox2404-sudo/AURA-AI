@@ -58,6 +58,7 @@ and arrive on every other device as `live:<type>`. Types in use: `house-updated`
 `chat`, `state`, `points`, `draw`, `emote` (World: `{ userId, emote: 'wave' | 'dance' | 'cheer' | 'jump' | 'laugh' | 'sleep' | 'heart' }`),
 `together` (World: `{ userId, to, act: 'hug' | 'highfive' | 'hands-ask' | 'hands-yes' | 'hands-no' | 'hands-off' }`),
 `pet` (World: where the house pet is, sent by the one device running its brain: `{ s: { roomId, x, z, y, ry, act, ball, fav }, happy }`), `pet-cmd` (World: `{ userId, cmd: 'pet' | 'sit' | 'spin' | 'fetch' | 'come', ball? }`),
+`zone` (World: `{ userId, zone: 'roof' | null, x, z, sit, sy, ry }`: I'm on the rooftop at this spot; presence can only name rooms, so it keeps me at the top floor's balcony door), `fireworks` (World: `{ seed }`, a fireworks show over the building),
 `party` (World: `{ roomId, until }`, a dance party in that room until that time, 0 = stopped), `ghost-new` (World: someone left a memory ghost, reload them).
 
 World also keeps `pet` = `{ happy: 0-100, at }` (the pet's happiness) and these `party:<roomId>` = `{ until }` (so late arrivals join the party) and
@@ -73,9 +74,11 @@ World also keeps `pet` = `{ happy: 0-100, at }` (the pet's happiness) and these 
 | `build.makeHouse(answers)` | Building | starter house from onboarding answers |
 | `build.houseTypes()`, `build.vibes()` | Building | lists for onboarding |
 | `world.openWardrobe(firstTime)` | World | opens the wardrobe |
-| `world.goToRoom(roomId)` | World | walk to that room for real (through doorways, and up/down the spiral stairs); false if there is no such room |
+| `world.goToRoom(roomId)` | World | walk to that room for real (through doorways, up/down the spiral stairs, and the glass elevator for 2+ floors); `'__roof'` = the rooftop; false if there is no such room |
 | `world.floor()` | World | `{ floor, floors, name }`: which floor I'm on (0 = ground floor). The house is shown as one building: `house.rooms` in order, 2 rooms per floor (the first room = the Entrance, on the ground floor; the top floor = Penthouse). Nothing is saved; `roomId` still means the room I'm in and changes when I walk through a doorway |
 | `world.pet(cmd)` | World | ask the house pet to `pet`, `sit`, `spin`, `fetch` or `come` |
+| `world.firstPerson(on?)` | World | first-person view on/off (toggles without an argument) |
+| `world.roofUse(kind)` | World | walk to the rooftop and use `telescope`, `fireworks`, `hottub` or `lounger` |
 | `world.party()` | World | start or stop a dance party in my room |
 | `world.emote(id)` | World | play an emote on my avatar and show it to everyone (`wave`, `dance`, `cheer`, `jump`, `laugh`, `sleep`, `heart`) |
 | `world.sitOn(itemId)`, `world.standUp()`, `world.isSitting()` | World | walk to a seat (sofa, chair...) in the current room and sit; stand up; am I sitting? Others see it through Presence `sit`/`sy`/`ry` |
