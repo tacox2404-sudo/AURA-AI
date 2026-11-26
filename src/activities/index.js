@@ -7,8 +7,10 @@
 
 import { GAMES } from './games.js';
 import { LIFE } from './life.js';
+import { TRIPS } from './trips.js';
+import './trips.css';
 
-export const REGISTRY = { ...GAMES, ...LIFE };
+export const REGISTRY = { ...GAMES, ...LIFE, ...TRIPS };
 
 export function initActivities(ctx) {
   const { bus, store, backend, ui } = ctx;
@@ -82,4 +84,6 @@ export function initActivities(ctx) {
   ctx.provide('activities.open', openActivity);
   ctx.provide('activities.list', () => Object.entries(REGISTRY).map(([id, a]) => ({ id, title: a.title, icon: a.icon })));
   ui.addDockButton({ id: 'play', icon: '🎲', label: 'Play', onClick: () => openActivity('games', { room: store.get().house?.rooms.find((r) => r.id === store.get().roomId) }), order: 35 });
+  // Trip planner in the "⋯ More" ribbon, so every house can plan a trip (not only rooms with a globe)
+  ui.addDockButton({ id: 'trip', icon: '✈️', label: 'Trips', onClick: () => openActivity('trip', { key: 'house:trip-planner' }), order: 45, group: 'more' });
 }
