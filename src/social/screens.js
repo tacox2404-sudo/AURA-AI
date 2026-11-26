@@ -113,6 +113,19 @@ function injectLandingStyles() {
   .al-recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: .2em 0 .6em; }
   .al-chip { display: inline-flex; align-items: center; }
   .al-chip .link { padding: 0 .3em; }
+  .lay-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+  .lay-presets .choice small { display: block; margin-top: 2px; }
+  .lay-presets .choice .lay-n { font-weight: 800; color: var(--accent-2); margin-top: 4px; }
+  .lay-custom { text-align: left; margin: 8px 0; }
+  .lay-step { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; }
+  .lay-btns { display: flex; align-items: center; gap: 10px; }
+  .lay-btns button { width: 2.2rem; height: 2.2rem; padding: 0; border-radius: 50%; font-size: 1.2rem; font-weight: 800; }
+  .lay-btns b { min-width: 1.4rem; text-align: center; font-size: 1.1rem; }
+  .lay-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .lay-chips .chip.rec { border-color: var(--accent-2); }
+  .lay-sum b { display: block; margin-bottom: 6px; }
+  .lay-rooms { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .lay-room { background: #f1ebff; color: var(--ink); border-radius: 999px; padding: .2em .7em; font-size: .82rem; font-weight: 600; }
   .house-card.go { background: var(--accent); color: #fff; }
   .house-card.go small { color: rgba(255,255,255,.9); }
   .al-install { border: 2px dashed var(--accent-2); }
@@ -226,8 +239,8 @@ export function onboarding(ctx, { me, onDone, onCancel }) {
   const { ui } = ctx; const { h } = ui;
   const types = ctx.use('build.houseTypes')();
   const vibes = ctx.use('build.vibes')();
-  const answers = { type: null, name: '', vibe: 'cozy', cities: [] };
-  let step = 0;
+  const answers = { type: null, name: '', vibe: 'cozy', cities: [], layout: null };
+  let step = 0; let showCustom = false;
   const wrap = h('div', { class: 'screen center' });
   const defaultName = { love: `Our Love Nest`, friends: `The Crib`, family: `Family Home`, solo: `${me.username}'s Studio` };
 
@@ -236,7 +249,7 @@ export function onboarding(ctx, { me, onDone, onCancel }) {
       () => h('div', {},
         h('h2', {}, 'Who is this house for?'),
         h('div', { class: 'choice-grid' }, ...Object.entries(types).map(([k, t]) =>
-          h('button', { class: 'choice' + (answers.type === k ? ' active' : ''), onclick: () => { answers.type = k; answers.name = defaultName[k]; step++; render(); } },
+          h('button', { class: 'choice' + (answers.type === k ? ' active' : ''), onclick: () => { if (answers.type !== k) answers.layout = null; answers.type = k; answers.name = defaultName[k]; step++; render(); } },
             h('span', { class: 'big' }, t.emoji), h('b', {}, t.label), h('small', {}, t.blurb))))),
       () => {
         const name = h('input', { value: answers.name, maxlength: 30 });
@@ -248,6 +261,39 @@ export function onboarding(ctx, { me, onDone, onCancel }) {
         h('div', { class: 'choice-grid' }, ...Object.entries(vibes).map(([k, v]) =>
           h('button', { class: 'choice' + (answers.vibe === k ? ' active' : ''), onclick: () => { answers.vibe = k; step++; render(); } },
             h('span', { class: 'vibe-dots' }, ...[v.floor, v.wall, v.accent].map((c) => h('i', { style: { background: c } }))), h('b', {}, v.label))))),
+      // Your layout: pick a themed preset (rooms, bathrooms, extras) or customise it; the rooms update live
+      () => {
+        const opt = ctx.use('build.layoutOptions')(answers.type);
+        if (!answers.layout) { const p = opt.presets[0]; answers.layout = { preset: p.id, ...p.choices }; }
+        const L = answers.layout;
+        const view = () => ctx.use('build.planRooms')(answers.type, L);
+        const full = view().rooms >= opt.maxRooms;
+        const pick = (p) => { answers.layout = { preset: p.id, ...p.choices, extras: [...p.choices.extras] }; render(); };
+        const change = (key, d) => { L[key] += d; L.preset = 'custom'; render(); };
+        const toggle = (id) => { L.extras = L.extras.includes(id) ? L.extras.filter((x) => x !== id) : [...L.extras, id]; L.preset = 'custom'; render(); };
+        const stepper = (label, key, max) => h('div', { class: 'lay-step' }, h('span', {}, label),
+          h('div', { class: 'lay-btns' }, h('button', { disabled: L[key] <= 0, onclick: () => change(key, -1) }, '−'), h('b', {}, String(L[key])), h('button', { disabled: L[key] >= max || full, onclick: () => change(key, 1) }, '+')));
+        const sum = view();
+        return h('div', {},
+          h('h2', {}, 'Pick your layout'),
+          h('p', { class: 'muted' }, 'A starting point. You can change anything later in Build mode.'),
+          h('div', { class: 'lay-presets' },
+            ...opt.presets.map((p) => h('button', { class: 'choice' + (L.preset === p.id ? ' active' : ''), onclick: () => pick(p) },
+              h('span', { class: 'big' }, p.emoji), h('b', {}, p.name), h('small', {}, p.blurb), h('span', { class: 'lay-n' }, `${p.rooms} rooms`))),
+            h('button', { class: 'choice' + (L.preset === 'custom' ? ' active' : ''), onclick: () => { L.preset = 'custom'; showCustom = true; render(); } },
+              h('span', { class: 'big' }, '🛠️'), h('b', {}, 'Make it yours'), h('small', {}, 'Choose the rooms yourself'), h('span', { class: 'lay-n' }, `${sum.rooms} rooms`))),
+          h('button', { class: 'link', onclick: () => { showCustom = !showCustom; render(); } }, showCustom ? '▲ Hide the details' : '▼ Customise: bedrooms, bathrooms, extras'),
+          showCustom ? h('div', { class: 'card lay-custom' },
+            opt.mains.length > 1 ? h('div', {}, h('b', {}, 'Main room'), h('div', { class: 'lay-chips' }, ...opt.mains.map((m) => h('button', { class: 'chip' + (L.main === m.id ? ' active' : ''), onclick: () => { L.main = m.id; L.preset = 'custom'; render(); } }, `${m.emoji} ${m.name}`)))) : null,
+            stepper('🛏️ Bedrooms', 'bedrooms', opt.maxBedrooms), stepper('🛁 Bathrooms', 'bathrooms', opt.maxBathrooms),
+            h('b', {}, 'Extra rooms'),
+            h('div', { class: 'lay-chips' }, ...opt.extras.map((e) => { const on = L.extras.includes(e.id); return h('button', { class: 'chip' + (on ? ' active' : '') + (e.recommended ? ' rec' : ''), disabled: !on && full, title: e.recommended ? 'Recommended for this kind of house' : '', onclick: () => toggle(e.id) }, `${e.emoji} ${e.name}`); }))) : null,
+          h('div', { class: 'card form lay-sum' },
+            h('b', {}, `🏠 ${sum.rooms} rooms · ${sum.floors} floor${sum.floors > 1 ? 's' : ''}`),
+            h('div', { class: 'lay-rooms' }, ...sum.plan.map((r) => h('span', { class: 'lay-room' }, `${r.emoji} ${r.name}`))),
+            full ? h('p', { class: 'muted small' }, `That is the maximum (${opt.maxRooms} rooms). More can be added later.`) : null,
+            h('button', { class: 'primary', onclick: () => { step++; render(); } }, 'Next')));
+      },
       () => {
         const love = answers.type === 'love';
         const c1 = h('input', { placeholder: 'Your city, e.g. Lisbon' });
@@ -258,7 +304,7 @@ export function onboarding(ctx, { me, onDone, onCancel }) {
       },
     ];
     wrap.replaceChildren(
-      h('div', { class: 'steps' }, ...[0, 1, 2, 3].map((i) => h('i', { class: i <= step ? 'on' : '' }))),
+      h('div', { class: 'steps' }, ...steps.map((_, i) => h('i', { class: i <= step ? 'on' : '' }))),
       steps[step](),
       h('button', { class: 'link', onclick: () => (step ? (step--, render()) : onCancel()) }, step ? '← Back' : 'Cancel'));
   }
