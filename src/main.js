@@ -21,3 +21,7 @@ initBuild(ctx);
 initWorld(ctx);
 initActivities(ctx);
 initSocial(ctx);
+
+// Ask the browser to keep our saved data (including the login) and not clear it when space is low
+// or after a few days away. Harmless if the browser says no.
+navigator.storage?.persist?.().catch(() => {});
