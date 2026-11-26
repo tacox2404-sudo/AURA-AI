@@ -7,9 +7,15 @@ const safeGet = (k) => { try { return localStorage.getItem(k); } catch { return 
 const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
 /** True when OurPlace was opened from the home screen (full-screen app mode). */
 export const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { return false; } };
+// the last few people who logged in on this device (usernames only, never passwords): tap one to log in fast
+const RECENT = 'op:recentUsers';
+export function recentUsers() { try { return JSON.parse(safeGet(RECENT) || '[]').filter(Boolean).slice(0, 5); } catch { return []; } }
+function pushRecent(name) { safeSet(RECENT, JSON.stringify([name, ...recentUsers().filter((n) => n.toLowerCase() !== name.toLowerCase())].slice(0, 5))); }
+function forgetRecent(name) { safeSet(RECENT, JSON.stringify(recentUsers().filter((n) => n !== name))); }
 /** Remember the username for "Welcome back", and let the browser's password manager save the login (Chrome/Android). */
 function rememberLogin(username, password) {
   safeSet(LAST_USER, username.trim());
+  pushRecent(username.trim());
   try {
     if (window.PasswordCredential && navigator.credentials?.store) {
       // the browser may refuse later (no password service, private window...): that must never be an error for the player
@@ -104,6 +110,9 @@ function injectLandingStyles() {
     .al .al-grid.s, .al .al-grid.w { grid-template-columns: repeat(3, 1fr); }
   }
   @media (min-width: 560px) and (max-width: 859px) { .al .al-grid.f { grid-template-columns: repeat(2, 1fr); } }
+  .al-recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: .2em 0 .6em; }
+  .al-chip { display: inline-flex; align-items: center; }
+  .al-chip .link { padding: 0 .3em; }
   .house-card.go { background: var(--accent); color: #fff; }
   .house-card.go small { color: rgba(255,255,255,.9); }
   .al-install { border: 2px dashed var(--accent-2); }
@@ -131,9 +140,18 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     finally { pass.setAttribute('autocomplete', 'current-password'); }
   };
   const logIn = go((u, p) => backend.signIn(u, p));
+  // "On this device": tap a name to fill it in and jump to the password (a password manager can then autofill it)
+  const recentBox = h('div', { class: 'al-recent' });
+  const drawRecent = () => {
+    const names = recentUsers();
+    recentBox.replaceChildren(...(names.length ? [h('span', { class: 'muted small' }, 'On this device:'),
+      ...names.map((n) => h('span', { class: 'al-chip' },
+        h('button', { type: 'button', class: 'chip' + (user.value.toLowerCase() === n.toLowerCase() ? ' active' : ''), onclick: () => { user.value = n; heading.textContent = `Welcome back, ${n} 👋`; drawRecent(); pass.focus(); } }, `👤 ${n}`),
+        h('button', { type: 'button', class: 'link small', title: `Forget ${n} on this device`, onclick: () => { forgetRecent(n); drawRecent(); } }, '✕')))] : []));
+  };
   const notYou = remembered ? h('button', { type: 'button', class: 'link', onclick: () => { safeSet(LAST_USER, ''); user.value = ''; heading.textContent = 'Come on in'; notYou.remove(); user.focus(); } }, 'Not you? Use another account') : null;
   const form = h('form', { class: 'card form al-form', id: 'al-form', autocomplete: 'on', onsubmit: (e) => { e.preventDefault(); logIn(); } },
-    heading, user, pass, err,
+    heading, recentBox, user, pass, err,
     h('div', { class: 'row-btns' },
       h('button', { type: 'submit', class: 'primary' }, 'Log in'),
       h('button', { type: 'button', onclick: go((u, p) => backend.signUp(u, p), true) }, 'Create account')),
@@ -141,6 +159,7 @@ export function loginScreen(ctx, { onDone, invited = false }) {
     isStandalone() && !remembered ? h('p', { class: 'muted small' }, 'Log in once in this app. After that, OurPlace remembers you.') : null,
     backend.mode === 'demo' ? h('p', { class: 'muted small' }, 'Demo mode: accounts live in this browser only. Open a second tab with another account to play together.') : null);
 
+  drawRecent();
   // the tagline changes every few seconds
   const tag = h('p', { class: 'al-tag' }, tagline());
   const timer = setInterval(() => {
@@ -189,7 +208,7 @@ export function housePicker(ctx, { me, houses, onOpen, onCreate, onJoin, onLogou
       h('small', {}, go ? `Pick up where you left off · ${house.rooms?.length || 0} rooms` : `${house.rooms?.length || 0} rooms · you are ${house.members?.[me.id]?.role || 'member'}`)));
   const others = last ? houses.filter((x) => x.id !== last.id) : houses;
   ui.screen(h('div', { class: 'screen' },
-    h('div', { class: 'screen-head' }, h('h2', {}, welcome ? `Welcome back, ${me.username} 👋` : `Hi ${me.username} 👋`), h('button', { class: 'link', onclick: onLogout }, 'Log out')),
+    h('div', { class: 'screen-head' }, h('h2', {}, welcome ? `Welcome back, ${me.username} 👋` : `Hi ${me.username} 👋`), h('button', { class: 'link', onclick: onLogout }, welcome ? 'Not you? Switch profile' : 'Log out')),
     last ? h('div', { class: 'list' }, card(last, true)) : null,
     pending > 0 && onFriends ? h('div', { class: 'card' }, h('button', { class: 'wide', onclick: onFriends }, `💌 ${pending} friend request${pending > 1 ? 's' : ''} waiting`)) : null,
     install,
