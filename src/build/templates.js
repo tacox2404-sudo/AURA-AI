@@ -4,6 +4,7 @@
 
 import { uid } from '../core/store.js';
 import { layoutItems } from './layout.js';
+import { planRooms, defaultChoices, itemsFor, roomVibe } from './presets.js';
 
 export { layoutItems, arrangeRoom } from './layout.js';
 
@@ -23,41 +24,13 @@ export const HOUSE_TYPES = {
   solo:    { label: 'Solo Studio',  emoji: '🎨', blurb: 'Start alone, invite people later' },
 };
 
-// Starter rooms. Each room is a list of catalog ids, laid out automatically.
-const ENTRANCE = { name: 'Entrance', items: ['welcome_sign', 'noticeboard', 'mailbox', 'rug', 'plant', 'lamp', 'armchair'] };
-const GAME_ROOM = { name: 'Game Room', items: ['arcade', 'connect4_table', 'tictactoe_table', 'easel', 'trophy', 'beanbag', 'beanbag', 'pool_table'] };
-
-const STARTERS = {
-  love: [
-    ENTRANCE, GAME_ROOM,
-    { name: 'Date Night', items: ['tv', 'sofa', 'rug', 'coffee_table', 'candles', 'heart_balloon', 'lamp', 'fireplace'] },
-    { name: 'Memory Room', items: ['photo_frame', 'photo_frame', 'calendar_board', 'link_board', 'armchair', 'plant', 'heart_balloon'] },
-    { name: 'Dream Room', items: ['gift_box', 'globe', 'weather_window', 'checklist_board', 'bed', 'tall_plant', 'candles'] },
-  ],
-  friends: [
-    ENTRANCE, GAME_ROOM,
-    { name: 'Lounge', items: ['tv', 'sofa', 'beanbag', 'beanbag', 'coffee_table', 'jukebox', 'rug', 'lamp'] },
-    { name: 'Trip HQ', items: ['globe', 'calendar_board', 'link_board', 'checklist_board', 'table', 'chair', 'chair'] },
-    { name: 'Hall of Fame', items: ['trophy', 'photo_frame', 'photo_frame', 'big_button', 'bench', 'tall_plant'] },
-  ],
-  family: [
-    ENTRANCE, GAME_ROOM,
-    { name: 'Living Room', items: ['tv', 'sofa', 'armchair', 'photo_frame', 'fireplace', 'rug', 'piano'] },
-    { name: 'Kitchen', items: ['fridge', 'counter', 'table', 'chair', 'chair', 'calendar_board', 'plant'] },
-    { name: 'Wish Corner', items: ['gift_box', 'gift_box', 'weather_window', 'bench', 'tree'] },
-  ],
-  solo: [
-    ENTRANCE, GAME_ROOM,
-    { name: 'Studio', items: ['desk', 'chair', 'photo_frame', 'link_board', 'checklist_board', 'bookshelf', 'tall_plant', 'beanbag'] },
-  ],
-};
-
-/** Build the first version of a house from the onboarding answers. */
-export function makeHouseDraft({ name, type = 'love', vibe = 'cozy', cities = [] }) {
-  const starter = STARTERS[type] || STARTERS.solo;
+/** Build the first version of a house from the onboarding answers.
+ *  answers.layout = { main, bedrooms, bathrooms, extras } (see presets.js); without it the first preset of the house type is used. */
+export function makeHouseDraft({ name, type = 'love', vibe = 'cozy', cities = [], layout = null }) {
+  const plan = planRooms(type, layout || defaultChoices(type));
   return {
     name, type, vibe, cities,
-    rooms: starter.map((r) => makeRoom({ name: r.name, vibe, kinds: r.items })),
+    rooms: plan.map((r) => makeRoom({ name: r.name, vibe: roomVibe(r.blueprint, vibe), kinds: itemsFor(r.blueprint, vibe) })),
     streak: { count: 0, lastDay: null },
   };
 }
