@@ -79,6 +79,7 @@ World also keeps `pet` = `{ happy: 0-100, at }` (the pet's happiness) and these 
 | `world.pet(cmd)` | World | ask the house pet to `pet`, `sit`, `spin`, `fetch` or `come` |
 | `world.firstPerson(on?)` | World | first-person view on/off (toggles without an argument) |
 | `world.roofUse(kind)` | World | walk to the rooftop and use `telescope`, `fireworks`, `hottub` or `lounger` |
+| `world.walkToFriend(houseId)` | World | walk out of the front door, along the friends' street, to a friend's open house, then go in (uses `social.visit(houseId)` when Social provides it, else opens the Friends panel) |
 | `world.party()` | World | start or stop a dance party in my room |
 | `world.emote(id)` | World | play an emote on my avatar and show it to everyone (`wave`, `dance`, `cheer`, `jump`, `laugh`, `sleep`, `heart`) |
 | `world.sitOn(itemId)`, `world.standUp()`, `world.isSitting()` | World | walk to a seat (sofa, chair...) in the current room and sit; stand up; am I sitting? Others see it through Presence `sit`/`sy`/`ry` |
