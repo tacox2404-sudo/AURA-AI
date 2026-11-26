@@ -18,7 +18,8 @@ const WALL_PRIORITY = ['tv', 'fireplace', 'arcade', 'bookshelf', 'piano', 'bed',
   'noticeboard', 'photo_frame', 'calendar_board', 'clock', 'link_board', 'checklist_board', 'weather_window', 'bathtub',
   'dj_booth', 'closet', 'bunk_bed', 'stove', 'kitchen_sink', 'pantry', 'coffee_machine', 'shower', 'bath_sink', 'toilet', 'dresser',
   'loveseat', 'balloon_arch', 'fence'];
-const PLANTS = ['plant', 'tall_plant', 'tree', 'bush'];
+const PLANTS = ['plant', 'tall_plant', 'tree', 'bush', 'cactus', 'fern'];
+const LAMPS = new Set(['lamp', 'table_lamp', 'lava_lamp']); // lamps sit beside the seating or the bed
 
 export function layoutItems(kinds, w, d) {
   const occ = Array.from({ length: d }, () => Array(w).fill(false));
@@ -134,8 +135,12 @@ export function layoutItems(kinds, w, d) {
     else tryPlace(kind, [[cx - 2, zc, 2], [cx + 1, zc, 2]], [0]);
   }
 
+  // nightstands go on either side of the bed
+  const bed = placed.bed || placed.single_bed || placed.bunk_bed;
+  if (bed) for (const kind of takeAll((k) => k === 'nightstand')) tryPlace(kind, [[bed.x - 1, bed.z, 0], [bed.x + defOf(bed.kind).size[0], bed.z, 0]], [0]);
+
   // ---- 4. loose pieces in a ring around the middle, turned to face it ----
-  const ringKinds = takeAll((k) => !PLANTS.includes(k) && k !== 'lamp' && k !== 'rug' && !defOf(k).wall);
+  const ringKinds = takeAll((k) => !PLANTS.includes(k) && !LAMPS.has(k) && k !== 'rug' && !defOf(k).wall);
   const R = Math.max(2.6, Math.min(w, d) * 0.36);
   ringKinds.forEach((kind, n) => {
     const def = defOf(kind);
@@ -159,8 +164,9 @@ export function layoutItems(kinds, w, d) {
   // ---- 5. plants in the corners, lamps by the seating ----
   const corners = [[0, 0], [w - 1, 0], [w - 1, d - 1], [0, d - 1]];
   for (const kind of takeAll((k) => PLANTS.includes(k))) tryPlace(kind, corners.map(([x, z]) => [x, z, 0]), [0]);
-  const lampSpots = sofaItem ? [[sofaItem.x + 2, sofaItem.z, 0], [sofaItem.x - 1, sofaItem.z, 0]] : [];
-  for (const kind of takeAll((k) => k === 'lamp')) tryPlace(kind, [...lampSpots, [1, 1, 0], [w - 2, 1, 0], [0, 1, 0], [w - 1, 1, 0]], [0]);
+  const bedItem = placed.bed || placed.single_bed || placed.bunk_bed;
+  const lampSpots = [...(sofaItem ? [[sofaItem.x + 2, sofaItem.z, 0], [sofaItem.x - 1, sofaItem.z, 0]] : []), ...(bedItem ? [[bedItem.x - 1, bedItem.z + 1, 0], [bedItem.x + defOf(bedItem.kind).size[0], bedItem.z + 1, 0]] : [])];
+  for (const kind of takeAll((k) => LAMPS.has(k))) tryPlace(kind, [...lampSpots, [1, 1, 0], [w - 2, 1, 0], [0, 1, 0], [w - 1, 1, 0]], [0]);
 
   // ---- 6. anything left over: any free cell (so nothing is ever dropped) ----
   for (const kind of [...pending]) {

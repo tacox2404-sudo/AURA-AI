@@ -9,7 +9,7 @@ import { VIBES, makeRoom } from './templates.js';
 
 const THEMES = [
   { words: ['movie', 'cinema', 'film', 'netflix', 'tv', 'date'], name: 'Movie Room', vibe: 'night', items: ['tv', 'sofa', 'beanbag', 'beanbag', 'rug', 'coffee_table', 'candles', 'lamp'] },
-  { words: ['travel', 'trip', 'vacation', 'holiday', 'flight', 'plan'], name: 'Travel HQ', vibe: 'modern', items: ['globe', 'link_board', 'calendar_board', 'checklist_board', 'weather_window', 'table', 'chair', 'chair'] },
+  { words: ['travel', 'trip', 'vacation', 'holiday', 'flight', 'plan'], name: 'Travel HQ', vibe: 'modern', items: ['globe', 'trip_board', 'link_board', 'calendar_board', 'checklist_board', 'weather_window', 'table', 'chair', 'chair'] },
   { words: ['game', 'arcade', 'play', 'pool', 'fun'], name: 'Arcade', vibe: 'night', items: ['arcade', 'arcade', 'pool_table', 'connect4_table', 'tictactoe_table', 'trophy', 'beanbag'] },
   { words: ['memory', 'memories', 'photo', 'art', 'gallery', 'museum'], name: 'Memory Gallery', vibe: 'pastel', items: ['photo_frame', 'photo_frame', 'photo_frame', 'easel', 'bench', 'tall_plant', 'heart_balloon'] },
   { words: ['spa', 'relax', 'calm', 'wellness', 'sauna'], name: 'Spa', vibe: 'nature', items: ['bathtub', 'towel_rack', 'bath_mat', 'candles', 'plant', 'tall_plant', 'deck_chair'] },
@@ -18,6 +18,8 @@ const THEMES = [
   { words: ['party', 'dance', 'disco', 'dj', 'birthday', 'celebrate', 'club'], name: 'Party Room', vibe: 'night', items: ['dj_booth', 'speaker', 'speaker', 'disco_ball', 'party_table', 'balloon_arch', 'gift_pile', 'beanbag'] },
   { words: ['music', 'karaoke', 'jukebox', 'band', 'song', 'piano'], name: 'Music Room', vibe: 'retro', items: ['jukebox', 'piano', 'speaker', 'big_button', 'beanbag', 'beanbag', 'rug', 'lamp'] },
   { words: ['study', 'work', 'office', 'focus', 'school'], name: 'Study', vibe: 'modern', items: ['desk', 'chair', 'bookshelf', 'checklist_board', 'calendar_board', 'lamp', 'plant'] },
+  { words: ['pet', 'cat', 'dog', 'kitten', 'puppy', 'fish'], name: 'Pet Corner', vibe: 'cozy', items: ['pet_bed', 'cat_tree', 'fish_tank', 'rug', 'plant', 'floor_cushion'] },
+  { words: ['balcony', 'terrace', 'sunset', 'hammock'], name: 'Balcony', vibe: 'nature', items: ['hammock', 'bbq', 'patio_chair', 'patio_chair', 'patio_table', 'fire_pit', 'string_lights', 'plant'] },
   { words: ['garden', 'plant', 'green', 'nature', 'outdoor', 'flower', 'bbq', 'picnic', 'patio'], name: 'Garden', vibe: 'nature', items: ['fountain', 'flower_bed', 'picnic_table', 'bbq', 'tree', 'bush', 'garden_lamp', 'fence'] },
   { words: ['gift', 'wish', 'christmas', 'present'], name: 'Gift Room', vibe: 'pastel', items: ['gift_box', 'gift_pile', 'link_board', 'calendar_board', 'heart_balloon', 'armchair'] },
   { words: ['bed', 'sleep', 'bedroom', 'cozy', 'nap'], name: 'Bedroom', vibe: 'cozy', items: ['bed', 'nightstand', 'closet', 'dresser', 'rug', 'lamp', 'plant'] },

@@ -2,7 +2,9 @@
 // Build mode (place / rotate / move / delete), the Rooms panel, the AI room creator,
 // and the services other areas use to draw furniture and make houses.
 
-import { CATALOG, CATALOG_BY_ID, CATEGORIES } from './catalog.js';
+import { CATALOG_BY_ID } from './catalog.js';
+import { openCatalogue, injectBuildStyles } from './catalogue.js';
+import { thumbInto, thumbFor } from './thumbs.js';
 import { VIBES, HOUSE_TYPES, makeHouseDraft, makeRoom, arrangeRoom } from './templates.js';
 import { createAiRoom } from './aiRoom.js';
 import { canEdit, currentRoom, uid } from '../core/store.js';
@@ -22,17 +24,22 @@ export function initBuild(ctx) {
     return item.rot % 2 ? [d, w] : [w, d];
   });
   ctx.provide('build.itemDef', (kind) => CATALOG_BY_ID[kind] || null);
+  ctx.provide('build.thumb', (kind, theme) => (CATALOG_BY_ID[kind] ? thumbFor(CATALOG_BY_ID[kind], theme) : ''));
+  ctx.provide('build.catalog', () => CATALOG_BY_ID);
   ctx.provide('build.makeHouse', (answers) => makeHouseDraft(answers));
   ctx.provide('build.houseTypes', () => HOUSE_TYPES);
   ctx.provide('build.vibes', () => VIBES);
 
+  injectBuildStyles();
   const save = (house) => ctx.use('house.save')(house);
 
   // ---------- build mode ----------
   let selectedKind = null;   // palette item to place
   let selectedItemId = null; // placed item being edited
   let moving = false;
-  let category = CATEGORIES[0];
+  const RECENT_KEY = 'op:build:recent'; // the last things you placed, for quick access
+  const recentKinds = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]').filter((k) => CATALOG_BY_ID[k]).slice(0, 6); } catch { return []; } };
+  const rememberKind = (k) => { try { localStorage.setItem(RECENT_KEY, JSON.stringify([k, ...recentKinds().filter((x) => x !== k)].slice(0, 6))); } catch { /* storage blocked */ } };
   const bar = h('div', { class: 'buildbar hidden' });
   ui.root.append(bar);
 
@@ -59,14 +66,31 @@ export function initBuild(ctx) {
       h('button', { class: 'danger', onclick: () => removeItem(sel) }, '🗑 Delete'),
       h('button', { onclick: () => { selectedItemId = null; moving = false; renderBar(); } }, 'Done'),
     ) : null;
+    const theme = room?.theme || { floor: '#c8a27a', wall: '#f3e6d3', accent: '#c4553a', wood: '#8b5e3c' };
+    const openCat = () => { bar.classList.add('hidden'); openCatalogue(ctx, { theme, startKind: selectedKind, onPick: pickKind, onClose: () => renderBar() }); }; // the bar steps aside while you shop
+    const pic = (kind) => { const img = h('img', { class: 'bb-pic', alt: '' }); thumbInto(img, CATALOG_BY_ID[kind], theme); return img; };
+    // while a catalogue item is chosen: show what it is, and where to tap
+    const placingDef = CATALOG_BY_ID[selectedKind];
+    const placingBar = placingDef ? h('div', { class: 'sel-bar' },
+      pic(selectedKind),
+      h('span', { class: 'bb-info' }, h('b', {}, `Placing: ${placingDef.name}`), h('small', {}, 'Tap the floor where it should go')),
+      h('button', { onclick: openCat }, '🛍️ Catalogue'),
+      h('button', { onclick: () => { selectedKind = null; renderBar(); } }, '✕ Cancel')) : null;
+    const quick = h('div', { class: 'palette' },
+      h('button', { class: 'primary cat-open', onclick: openCat }, '🛍️ Catalogue'),
+      ...recentKinds().map((k) => h('button', { class: 'pal-item', title: CATALOG_BY_ID[k].desc, onclick: () => pickKind(k) }, pic(k), h('span', {}, CATALOG_BY_ID[k].name))));
     bar.replaceChildren(
       h('div', { class: 'buildbar-top' },
-        h('div', { class: 'chips' }, ...CATEGORIES.map((c) => h('button', { class: 'chip' + (c === category ? ' active' : ''), onclick: () => { category = c; renderBar(); } }, c))),
+        h('b', { class: 'bb-title' }, '🛠️ Build'),
         h('button', { class: 'primary small', onclick: exitBuild }, '✓ Done')),
-      selBar || h('div', { class: 'palette' }, ...CATALOG.filter((c) => c.cat === category).map((c) =>
-        h('button', { class: 'pal-item' + (c.id === selectedKind ? ' active' : ''), onclick: () => { selectedKind = selectedKind === c.id ? null : c.id; renderBar(); if (selectedKind) ui.toast(`Tap the floor to place: ${c.name}`); } },
-          h('span', {}, c.name), c.activity ? h('small', {}, '✨ ' + c.activity) : null))),
-    );
+      selBar || placingBar || quick);
+  }
+
+  // choose an item from the catalogue (or the quick row) to place
+  function pickKind(kind) {
+    selectedKind = selectedKind === kind ? null : kind;
+    if (selectedKind) { rememberKind(kind); ui.toast(`Tap the floor to place the ${CATALOG_BY_ID[kind].name.toLowerCase()}`); }
+    renderBar();
   }
 
   function editItem(item, fn) {
