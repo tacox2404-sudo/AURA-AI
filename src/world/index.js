@@ -20,7 +20,9 @@ import { buildAvatar, animateAvatar, setSitting, nameTag, randomAppearance } fro
 import { isSeat, seatSlots } from './seats.js';
 import { initWardrobe } from './wardrobe.js';
 import { makeWalkGrid } from './walkGrid.js';
-import { layoutBuilding, findRoute, linkPath, buildOutside, FLOOR_H } from './building.js';
+import { layoutBuilding, findRoute, linkPath, buildOutside, FLOOR_H, ROOF, roofFootprint, roofItemDef } from './building.js';
+import { createRooftop } from './rooftop.js';
+import { createStreet } from './street.js';
 import { buildRoomMesh, setWallCut } from './roomMesh.js';
 import { buildWindows, lightAt, GLOWING } from './daylight.js';
 import { createPet } from './pet.js';
@@ -28,6 +30,7 @@ import { initEmotes, floatEmoji } from './emotes.js';
 import { initTogether } from './together.js';
 import { initParty } from './party.js';
 import { initGhosts } from './ghosts.js';
+import { createSky } from './sky.js';
 import { currentRoom } from '../core/store.js';
 
 export function initWorld(ctx) {
@@ -62,6 +65,9 @@ export function initWorld(ctx) {
   }
   addEventListener('resize', resize); resize();
 
+  // live window skies, real weather, seasons (sky.js)
+  const sky = createSky(ctx);
+
   // ---------- the building ----------
   let layout = null;          // where every room is (building.js)
   const rooms = new Map();    // roomId -> { info, mesh, walk, win }
@@ -75,7 +81,11 @@ export function initWorld(ctx) {
   const curFloor = () => (roomRef && layout?.rooms.get(roomRef.id)?.floor) || 0;
   const floorY = () => curFloor() * FLOOR_H;
   // the floor the camera shows: on the stairs it switches halfway up (or down)
-  const viewFloor = () => (me.transit?.stairs ? Math.max(0, Math.min(layout.floors.length - 1, Math.round((me.holder.position.y - 0.2) / FLOOR_H))) : curFloor());
+  const topLevel = () => (layout ? layout.floors.length - (layout.roof ? 0 : 1) : 0); // the roof counts as one more level
+  const viewFloor = () => (me.transit?.stairs ? Math.max(0, Math.min(topLevel(), Math.round((me.holder.position.y - 0.2) / FLOOR_H))) : curFloor());
+  const onRoof = () => roomRef?.id === ROOF;
+  let roofWalk = null; // walk grid of the rooftop
+  let street = null;   // the friends' street (street.js), made further down
   const roomCenter = (id) => layout.toGlobal(id, 0, 0);
   const toLocal = (id, g) => { const c = roomCenter(id); return new THREE.Vector3(g.x - c.x, 0, g.z - c.z); };
   const cellToLocal = (x, z, sw = 1, sd = 1) => new THREE.Vector3(x + sw / 2 - bounds.w / 2, 0, z + sd / 2 - bounds.d / 2);
@@ -84,6 +94,7 @@ export function initWorld(ctx) {
   function buildHouse(house) {
     if (houseGroup) scene.remove(houseGroup);
     houseGroup = new THREE.Group(); rooms.clear();
+    sky.refresh(); sky.clearLabels(); // works out my city and my partner's city first
     const footprint = ctx.use('build.footprint'), itemDef = ctx.use('build.itemDef'), itemMesh = ctx.use('build.itemMesh');
     const walks = new Map(house.rooms.map((r) => [r.id, makeWalkGrid(r, footprint, itemDef)]));
     layout = layoutBuilding(house, walks);
@@ -95,25 +106,34 @@ export function initWorld(ctx) {
       const avoid = [];
       for (const l of layout.links) { if (l.a === room.id) avoid.push(l.cellA); if (l.b === room.id) avoid.push(l.cellB); }
       if (info.floor === 0 && info.index === 0) avoid.push({ x: Math.floor(room.size[0] / 2), z: room.size[1] - 1 });
-      const win = buildWindows(room, walks.get(room.id), sides, avoid);
+      const win = buildWindows(room, walks.get(room.id), sides, avoid, { home: sky.textures.home, partner: sky.hasPartner() ? sky.textures.partner : null });
       mesh.group.add(win.group);
+      // the window to my partner's city gets a little sign under it
+      const pw = win.windows.find((x) => x.partner);
+      if (pw) { const label = sky.makeLabel(); label.position.set(0, 0.98, 0.22); pw.group.add(label); }
       houseGroup.add(mesh.group);
       rooms.set(room.id, { info, mesh, walk: walks.get(room.id), win });
     }
     outside = buildOutside(layout, house);
     houseGroup.add(outside.group);
+    roofWalk = layout.roof ? makeWalkGrid(layout.roof.room, roofFootprint, roofItemDef) : null;
+    street?.build(layout); // the friends' street in front of the building
+    sky.setOutside(outside);
     scene.add(houseGroup);
   }
 
   /** I'm now in this room: remember it, show the right floor, move the lights. */
   function enterRoom(room) {
+    const wasRoof = onRoof();
     roomRef = room;
     const r = rooms.get(room.id);
-    walk = r?.walk || null;
+    walk = room.id === ROOF ? roofWalk : r?.walk || null;
     bounds = { w: room.size[0], d: room.size[1] };
     itemMeshes = []; floorMeshes = [];
     const f = curFloor();
     for (const x of rooms.values()) if (x.info.floor === f) { itemMeshes.push(...x.mesh.items); floorMeshes.push(x.mesh.floorMesh); }
+    if (room.id === ROOF && outside.roof) { itemMeshes.push(...outside.roof.items); floorMeshes.push(outside.roof.floorMesh); }
+    if (wasRoof && room.id !== ROOF) sendZone(true); // tell the others I left the roof
     updateVisibility(true);
     placeLights();
     applyDaylight();
@@ -132,7 +152,7 @@ export function initWorld(ctx) {
     for (const [id, r] of rooms) {
       const fl = r.info.floor;
       if (force || f !== shownFloor) {
-        r.mesh.group.visible = fl <= f;
+        r.mesh.group.visible = fl <= f || fp.on; // first person: the floor above is my ceiling
         r.mesh.roof.visible = fl < f;
         for (const m of r.mesh.items) m.visible = fl === f;
       }
@@ -140,16 +160,18 @@ export function initWorld(ctx) {
       for (const wl of r.mesh.walls) {
         if (fl < f) { setWallCut(wl, wl.interior); continue; } // floors below: outside walls up, like a building
         if (fl > f) continue;
+        if (fp.on) { setWallCut(wl, false); continue; } // first person: all walls up
         // a shared wall belongs to the left room; seen from the right room it faces the other way
         let out = wl.out;
         if (wl.interior && mine && mine.left === id) out = [-out[0], -out[1]];
         setWallCut(wl, facesCamera(out) || (wl.interior && mine?.floor === fl && mine.room.id !== id && mine.left !== id));
       }
-      for (const wn of r.win.windows) wn.group.visible = fl < f || (fl === f && !facesCamera(wn.out));
+      for (const wn of r.win.windows) wn.group.visible = fl < f || (fl === f && (fp.on || !facesCamera(wn.out)));
     }
     if (force || f !== shownFloor) {
-      outside.perFloor.forEach((g, i) => { g.visible = i <= f; });
-      outside.stairs.forEach((g, i) => { g.visible = i <= f; });
+      outside.perFloor.forEach((g, i) => { g.visible = i <= f || fp.on; });
+      outside.stairs.forEach((g, i) => { g.visible = i <= f || fp.on; });
+      if (outside.roof) outside.roof.group.visible = f >= layout.roof.floor || fp.on;
       for (const s of outside.signs) s.sprite.visible = s.floor === f && (!s.room || s.room === roomRef.id); // doorway signs: only on my side
       shownFloor = f;
       syncRemotes();
@@ -161,9 +183,9 @@ export function initWorld(ctx) {
   const params = new URLSearchParams(location.search);
   const forcedHour = params.has('hour') ? Number(params.get('hour')) : NaN;
   let lastLight = null; let lightCheck = 0;
+  const myHour = () => { const d = new Date(); return Number.isFinite(forcedHour) ? forcedHour : d.getHours() + d.getMinutes() / 60; };
   function applyDaylight() {
-    const d = new Date();
-    const hour = Number.isFinite(forcedHour) ? forcedHour : d.getHours() + d.getMinutes() / 60;
+    const hour = myHour();
     const light = lightAt(hour);
     lastLight = light;
     hemi.intensity = light.hemi; sun.intensity = light.sunI; sun.color.copy(light.sun);
@@ -193,7 +215,9 @@ export function initWorld(ctx) {
   const me = { holder: new THREE.Group(), av: null, path: [], pos: new THREE.Vector3(0, 0, 2), keys: new Set(), sit: null, pendingSit: null,
     run: false, faceAt: null, pendingFriend: null, transit: null, route: [], goal: null, wasMoving: false };
   scene.add(me.holder);
-  const clearPlans = () => { me.pendingSit = null; me.pendingFriend = null; me.faceAt = null; me.route = []; me.goal = null; };
+  const clearPlans = () => { me.pendingSit = null; me.pendingFriend = null; me.pendingRoof = null; me.pendingStreet = null; me.faceAt = null; me.route = []; me.goal = null; };
+  // first-person view: the camera at my avatar's eyes; drag to look around
+  const fp = { on: false, yaw: 0, pitch: -0.05, last: null };
   let movingSelf = false; // true while I change room by walking (so the room change doesn't teleport me)
 
   function rebuildMyAvatar() {
@@ -218,8 +242,15 @@ export function initWorld(ctx) {
     const free = walk ? walk.nearestFree(p.x, p.z) : p; // never inside furniture
     me.pos.set(free.x, 0, free.z);
     placeHolder();
-    pet.place(walk, me.pos, roomCenter(roomRef.id));
     sendPresence(true);
+  }
+  /** On the roof, presence can't say "roof" (it only knows rooms), so I also send a small 'zone' live event. */
+  let lastZone = 0;
+  function sendZone(left) {
+    const now = performance.now();
+    if (!left && now - lastZone < 150) return; lastZone = now;
+    ctx.use('live.send')?.(left ? { type: 'zone', userId: store.get().me?.id, zone: null }
+      : { type: 'zone', userId: store.get().me?.id, zone: 'roof', x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), sit: me.sit ? 1 : 0, sy: me.sit ? +me.sit.y.toFixed(3) : 0, ry: +me.holder.rotation.y.toFixed(2) });
   }
   function placeHolder() {
     if (!layout || !roomRef) return;
@@ -229,10 +260,15 @@ export function initWorld(ctx) {
 
   // ---------- other players ----------
   const remotes = new Map(); // userId -> { holder, av, key, target (building coords), roomId, local }
+  const zones = new Map();   // userId -> { x, z, sit, sy, ry } for people on the roof (live event 'zone')
+  bus.on('live:zone', (e) => { const id = e.userId || e.from; if (!id) return; if (e.zone === 'roof') zones.set(id, e); else zones.delete(id); syncRemotes(); });
   function syncRemotes() {
     const s = store.get();
     const f = curFloor();
-    const here = layout ? s.players.filter((p) => layout.rooms.get(p.roomId)?.floor === f) : []; // everyone on my floor
+    // people on the roof: use their roof spot instead of their presence
+    const players = s.players.map((p) => { const z = zones.get(p.userId); return z && layout?.roof ? { ...p, roomId: ROOF, x: z.x, z: z.z, sit: z.sit, sy: z.sy, ry: z.ry } : p; });
+    for (const id of [...zones.keys()]) if (!s.players.some((p) => p.userId === id)) zones.delete(id);
+    const here = layout ? players.filter((p) => layout.rooms.get(p.roomId)?.floor === f) : []; // everyone on my floor
     const ids = new Set(here.map((p) => p.userId));
     for (const [id, r] of remotes) if (!ids.has(id)) { scene.remove(r.holder); remotes.delete(id); }
     for (const p of here) {
@@ -285,20 +321,41 @@ export function initWorld(ctx) {
     lastSent = now;
     const s = store.get();
     if (!s.me || !s.house) return;
+    if (onRoof()) { // presence keeps me at the top floor's balcony door; the zone event has my real spot
+      sendZone(false);
+      const c = layout.floors[layout.floors.length - 1].balcony.cell; const t = layout.rooms.get(s.roomId);
+      if (t) ctx.use('live.presence')({ roomId: s.roomId, x: +(c.x + 0.5 - t.w / 2).toFixed(2), z: +(c.z + 0.5 - t.d / 2).toFixed(2), name: s.me.username, avatar: s.me.avatar, sit: 0, sy: 0, ry: 0 });
+      return;
+    }
     ctx.use('live.presence')({ roomId: s.roomId, x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), name: s.me.username, avatar: s.me.avatar,
       sit: me.sit ? 1 : 0, sy: me.sit ? +me.sit.y.toFixed(3) : 0, ry: me.sit ? +me.sit.ry.toFixed(3) : 0 }); // sit/sy/ry: sitting, how high, which way I face
   }
 
   // ---------- going somewhere: in my room, or through doorways and up/down the stairs ----------
   /** Walk to another room (any floor) and then do `goal` there. */
-  function goTo(roomId, goal = null) {
+  function goTo(roomId, goal = null, { elevator = false } = {}) {
     if (!layout || !roomRef) return false;
     standUp(); clearPlans(); me.run = false; me.transit = null;
-    const route = findRoute(layout, roomRef.id, roomId);
+    let route = findRoute(layout, roomRef.id, roomId);
     if (!route) { ui.toast("Can't find the way there"); return false; }
+    route = useElevator(route, elevator ? 1 : 2);
     me.route = route; me.goal = goal;
     if (route.length) startLeg(); else doGoal();
     return true;
+  }
+  /** Two or more flights of stairs in a row (or one, if asked): take the glass elevator instead. */
+  function useElevator(route, min) {
+    if (!layout.elevator) return route;
+    const cellOf = (id) => (id === ROOF ? layout.roof.elevatorCell : layout.floors[layout.rooms.get(id).floor].balcony.cell);
+    const out = [];
+    for (let i = 0; i < route.length;) {
+      let j = i; while (j < route.length && route[j].link.type === 'stairs') j++;
+      if (j - i >= min) {
+        const from = route[i].from, to = route[j - 1].to;
+        out.push({ from, to, link: { type: 'elevator', a: from, b: to, cellA: cellOf(from), cellB: cellOf(to) } }); i = j;
+      } else { out.push(route[i]); i++; }
+    }
+    return out;
   }
   /** Walk up to the doorway (or balcony door) of the next step of the route. */
   function startLeg() {
@@ -310,18 +367,17 @@ export function initWorld(ctx) {
   function startTransit(leg) {
     const pts = linkPath(layout, leg.link, leg.from);
     pts.unshift(me.holder.position.clone());
-    me.transit = { pts, i: 1, leg, stairs: leg.link.type === 'stairs' };
+    me.transit = { pts, i: 1, leg, stairs: leg.link.type !== 'door', elevator: leg.link.type === 'elevator' };
   }
   function finishTransit() {
     const leg = me.transit.leg; const end = me.transit.pts[me.transit.pts.length - 1];
     me.transit = null; me.route.shift();
-    const room = store.get().house.rooms.find((r) => r.id === leg.to);
+    const room = leg.to === ROOF ? layout.roof.room : store.get().house.rooms.find((r) => r.id === leg.to);
     movingSelf = true;
-    store.set({ roomId: leg.to });      // my store listener calls enterRoom() for me
+    if (leg.to !== ROOF) store.set({ roomId: leg.to }); // my store listener calls enterRoom() for me (the roof isn't a saved room)
     movingSelf = false;
     if (roomRef?.id !== leg.to && room) enterRoom(room);
     const p = toLocal(leg.to, end); me.pos.set(p.x, 0, p.z);
-    pet.place(walk, me.pos, roomCenter(leg.to)); // the pet follows me in
     sendPresence(true);
     if (me.route.length) startLeg(); else doGoal();
   }
@@ -332,6 +388,12 @@ export function initWorld(ctx) {
     if (goal.type === 'point') { me.path = walk.pathToPoint(me.pos, clampToRoom(goal.p.clone())) || []; me.run = !!goal.run; if (me.path.length) showMarker(me.path[me.path.length - 1], goal.run); }
     if (goal.type === 'item') useItem(goal.item);
     if (goal.type === 'seat') trySit(goal.item, goal.p);
+    if (goal.type === 'roof') useRoofItem(goal.kind);
+    if (goal.type === 'street') { // walk to the front door, then out (see the arrival code in the loop)
+      const info = layout.rooms.get(roomRef.id);
+      me.path = walk.pathToCell(me.pos, { x: Math.floor(info.w / 2), z: info.d - 1 }) || [];
+      me.pendingStreet = { houseId: goal.houseId, name: goal.name };
+    }
   }
   /** Walk up to a piece of furniture in my room, face it, and open it. */
   function useItem(item) {
@@ -342,10 +404,46 @@ export function initWorld(ctx) {
     bounceItem(item.id);
     bus.emit('item:activate', { item, room: roomRef });
   }
+  /** Tapped a friend's house on the street: walk out of the front door and over to theirs. */
+  function goStreet(target) {
+    if (!target || target.empty) { ui.toast('Add friends and ask them to open their house for visits 💌'); return ctx.use('social.openFriends')(); }
+    const entrance = layout.floors[0].rooms[0];
+    goTo(entrance, { type: 'street', houseId: target.houseId, name: target.name });
+  }
+  /** On the roof: walk up to the telescope / fireworks / hot tub / lounger, then use it. */
+  function useRoofItem(kind) {
+    const it = layout.roof.room.items.find((i) => i.kind === kind); if (!it || !walk) return;
+    standUp(); clearPlans(); me.run = false;
+    me.path = walk.pathToItem(me.pos, it) || [];
+    me.faceAt = cellToLocal(it.x, it.z, it.size[0], it.size[1]);
+    me.pendingRoof = kind;
+  }
+  /** Get into the hot tub (sunk in the water) or lie back on a lounger. */
+  function sitOnRoof(kind) {
+    const its = layout.roof.room.items.filter((i) => i.kind === kind); if (!its.length) return;
+    const slots = [];
+    for (const it of its) {
+      const c = cellToLocal(it.x, it.z, it.size[0], it.size[1]);
+      if (kind === 'hottub') for (const [dx, dz] of [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]]) slots.push({ x: c.x + dx, z: c.z + dz, y: 0.05, ry: Math.atan2(-dx, -dz), item: it.id });
+      else slots.push({ x: c.x, z: c.z + 0.1, y: 0.2, ry: 0, item: it.id });
+    }
+    const taken = (sl) => [...remotes.values()].some((r) => r.sit && r.roomId === ROOF && Math.hypot(r.local.x - sl.x, r.local.z - sl.z) < 0.4);
+    const free = slots.filter((sl) => !taken(sl)).sort((a, b) => Math.hypot(a.x - me.pos.x, a.z - me.pos.z) - Math.hypot(b.x - me.pos.x, b.z - me.pos.z));
+    if (!free.length) return ui.toast('No room left 😄');
+    const sl = free[0];
+    me.sit = { x: sl.x, z: sl.z, y: sl.y, ry: sl.ry, item: sl.item };
+    me.pos.set(sl.x, 0, sl.z); me.path = []; me.holder.rotation.y = sl.ry;
+    setSitting(me.av, true);
+    if (kind === 'hottub') ui.toast('Ahh, warm bubbles 🫧');
+    sendPresence(true);
+  }
+
   /** Go one floor up (+1) or down (-1), through the stairs. */
   function goFloor(dir) {
     if (!layout) return false;
-    const target = layout.floors[curFloor() + dir];
+    const n = curFloor() + dir;
+    if (n === layout.floors.length && layout.roof) return goTo(ROOF, null);
+    const target = layout.floors[n];
     if (!target) return false;
     return goTo(target.balcony.roomId, null);
   }
@@ -383,10 +481,10 @@ export function initWorld(ctx) {
   cv.addEventListener('pointerdown', (e) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 1) {
-      down = { x: e.clientX, y: e.clientY }; gesture = false;
+      down = { x: e.clientX, y: e.clientY }; gesture = false; fp.last = { x: e.clientX, y: e.clientY };
       clearTimeout(holdTimer);
       holdTimer = setTimeout(() => {
-        if (pointers.size !== 1 || gesture || store.get().mode !== 'play' || ui.isPanelOpen() || me.transit || !roomRef) return;
+        if (pointers.size !== 1 || gesture || store.get().mode !== 'play' || ui.isPanelOpen() || me.transit || !roomRef || fp.on) return;
         const pt = [...pointers.values()][0];
         holding = true; holdPoint = floorPointAt(pt.x, pt.y); holdRepath = 0;
         clearPlans(); standUp(); me.run = false;
@@ -398,6 +496,10 @@ export function initWorld(ctx) {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch0 && pointers.size >= 2) zoom = clampZoom(pinch0.z * pinch0.d / fingerGap());
+    if (fp.on && pointers.size === 1 && fp.last) { // first person: drag to look around
+      fp.yaw -= (e.clientX - fp.last.x) * 0.006; fp.pitch = Math.max(-0.9, Math.min(0.7, fp.pitch - (e.clientY - fp.last.y) * 0.005));
+      fp.last = { x: e.clientX, y: e.clientY };
+    }
     if (holding) holdPoint = floorPointAt(e.clientX, e.clientY) || holdPoint;
     else if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) { clearTimeout(holdTimer); holdTimer = null; } // a drag, not a hold
   });
@@ -431,12 +533,17 @@ export function initWorld(ctx) {
       const petHit = pet.mesh && ray.intersectObject(pet.mesh, true)[0];
       const friendHit = firstShown(ray.intersectObjects([...remotes.values()].map((r) => r.av), true));
       const stairHit = firstShown(ray.intersectObjects(outside.tapTargets.filter((o) => !o.isSprite), true));
+      const liftHit = outside.elevator && firstShown(ray.intersectObject(outside.elevator.group, true));
+      const streetHit = street && firstShown(ray.intersectObjects(street.targets, true));
       const near = [petHit && { k: 'pet', d: petHit.distance }, friendHit && { k: 'friend', d: friendHit.distance, h: friendHit },
-        stairHit && { k: 'stairs', d: stairHit.distance, h: stairHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
+        stairHit && { k: 'stairs', d: stairHit.distance, h: stairHit }, liftHit && { k: 'lift', d: liftHit.distance },
+        streetHit && { k: 'street', d: streetHit.distance, h: streetHit }].filter(Boolean).sort((a, b) => a.d - b.d)[0];
       const solid = firstShown(ray.intersectObjects([...itemMeshes, ...floorMeshes], true));
       if (near && (!solid || near.d <= solid.distance + 0.3)) {
         if (near.k === 'pet') return tapPet();
         if (near.k === 'stairs') return useSign(near.h.object.userData);
+        if (near.k === 'lift') return rooftop.openElevator();
+        if (near.k === 'street') return goStreet(near.h.object.userData.street);
         if (near.k === 'friend') { const id = [...remotes.entries()].find(([, r]) => isInside(near.h.object, r.av))?.[0]; if (id) return goToFriend(id); }
       }
     }
@@ -446,8 +553,14 @@ export function initWorld(ctx) {
     const hit = firstShown(ray.intersectObjects(pool, true));
     if (!hit) return;
     const ud = hit.object.userData;
-    const roomId = ud.roomId || ud.floorOf || hitRoom(hit.object);
-    const room = s.house.rooms.find((r) => r.id === roomId);
+    // the rooftop: its things and its floor
+    if (ud.roofItem || ud.roofFloor) {
+      if (!playing) return;
+      if (!onRoof()) return goTo(ROOF, ud.roofItem ? { type: 'roof', kind: ud.roofItem } : { type: 'point', p: toLocal(ROOF, hit.point) });
+      if (ud.roofItem) return useRoofItem(ud.roofItem);
+    }
+    const roomId = ud.roofFloor ? ROOF : ud.roomId || ud.floorOf || hitRoom(hit.object);
+    const room = roomId === ROOF ? layout.roof.room : s.house.rooms.find((r) => r.id === roomId);
     if (!room) return;
     const local = toLocal(roomId, hit.point);
     const b = { w: room.size[0], d: room.size[1] };
@@ -462,7 +575,7 @@ export function initWorld(ctx) {
       return;
     }
     // the floor
-    if (roomId === roomRef.id) bus.emit('world:tap', { target: 'floor', cell: localToCell(local, b), room });
+    if (roomId === roomRef.id && roomId !== ROOF) bus.emit('world:tap', { target: 'floor', cell: localToCell(local, b), room });
     if (!playing || !walk) return;
     const now = performance.now();
     const dbl = now - lastFloorTap.t < 350 && Math.hypot(e.clientX - lastFloorTap.x, e.clientY - lastFloorTap.y) < 40;
@@ -519,6 +632,25 @@ export function initWorld(ctx) {
   }, text);
   const rotateBtn = roundBtn('Rotate camera', 'Rotate camera (Q / E)', 96, '⟳', () => rotateCamera(1));
   host.append(rotateBtn);
+  // 👁 first-person view (left side, above the floor buttons)
+  const eyeBtn = roundBtn('First person view', 'Walk around through your own eyes', 236, '👁', () => setFirstPerson(!fp.on));
+  Object.assign(eyeBtn.style, { right: 'auto', left: '12px' });
+  host.append(eyeBtn);
+  function setFirstPerson(on) {
+    fp.on = on; fp.yaw = Math.atan2(-me.pos.x, -me.pos.z); fp.pitch = -0.05; // look into the room
+    camera.fov = on ? 70 : 40; camera.updateProjectionMatrix();
+    me.holder.visible = !on;              // don't see the inside of my own head
+    rotateBtn.style.display = on ? 'none' : 'block';
+    eyeBtn.textContent = on ? '🏠' : '👁';
+    eyeBtn.title = on ? 'Back to the house view' : 'Walk around through your own eyes';
+    stopHold(); updateVisibility(true);
+    if (on) ui.toast('👁 First person: drag to look, tap to walk');
+  }
+  ctx.provide('world.firstPerson', (on) => setFirstPerson(on ?? !fp.on));
+  /** Walk out of the front door, along the street, to a friend's open house and go in. */
+  ctx.provide('world.walkToFriend', (houseId) => (layout ? goStreet({ houseId }) : false));
+  /** Walk to a rooftop thing and use it: 'telescope' | 'fireworks' | 'hottub' | 'lounger' (from anywhere in the house). */
+  ctx.provide('world.roofUse', (kind) => (layout?.roof ? (onRoof() ? useRoofItem(kind) : goTo(ROOF, { type: 'roof', kind })) : false));
 
   // ---------- floor buttons (left side): ▲ up a floor, the floor's name, ▼ down a floor ----------
   const floorUi = (() => {
@@ -534,9 +666,9 @@ export function initWorld(ctx) {
     } }, up, name, dn);
     host.append(box);
     function render() {
-      const s = store.get(); const n = layout?.floors.length || 0; const f = curFloor();
+      const s = store.get(); const n = layout ? topLevel() + 1 : 0; const f = curFloor();
       box.style.display = s.house && n > 1 && s.mode !== 'build' ? 'flex' : 'none';
-      name.textContent = layout?.floors[f]?.name || '';
+      name.textContent = onRoof() ? 'Rooftop' : layout?.floors[f]?.name || '';
       up.disabled = f >= n - 1; dn.disabled = f <= 0;
       up.style.opacity = up.disabled ? '.3' : '1'; dn.style.opacity = dn.disabled ? '.3' : '1';
     }
@@ -568,6 +700,30 @@ export function initWorld(ctx) {
       else goTo(roomId, { type: 'point', p: new THREE.Vector3(p.x, 0, p.z), run });
     },
   };
+  Object.assign(world, {
+    walkOf: (roomId) => (roomId === ROOF ? roofWalk : rooms.get(roomId)?.walk || null),
+    roomItems: (roomId) => (roomId === ROOF ? layout?.roof?.room.items || [] : rooms.get(roomId)?.info.room.items || []),
+    footprint: (item) => ctx.use('build.footprint')(item),
+    roomFloor: (roomId) => layout?.rooms.get(roomId)?.floor ?? -1,
+    viewFloor: () => (layout && roomRef ? viewFloor() : 0),
+  });
+  Object.assign(world, {
+    night: () => lastLight?.night || 0,
+    roofCenter: () => (layout?.roof ? layout.toGlobal(ROOF, 0, 0) : null),
+    roofBulbs: () => outside?.roof?.bulbs || [],
+    sitOnRoof: (kind) => sitOnRoof(kind),
+    /** every level the elevator stops at (floors + the roof) */
+    floors: () => (layout ? [...layout.floors.map((f) => ({ level: f.level, name: f.name })), ...(layout.roof ? [{ level: layout.roof.floor, name: 'Rooftop', roof: true }] : [])]
+      .map((f) => ({ ...f, current: f.level === curFloor() })) : []),
+    rideTo: (level) => goTo(level === layout.roof?.floor ? ROOF : layout.floors[level].balcony.roomId, null, { elevator: true }),
+  });
+  const rooftop = createRooftop(ctx, host, world);
+  world.cellGlobal = (roomId, cell) => layout.cellGlobal(roomId, cell);
+  street = createStreet(ctx, world);
+  if (layout) street.build(layout);
+  const pet = createPet(ctx, world);
+  /** Ask the pet to do something: 'pet' | 'sit' | 'spin' | 'fetch' | 'come' (also used by the robot test). */
+  ctx.provide('world.pet', (cmd) => pet.ask(cmd));
   const together = initTogether(ctx, host, world);
   const party = initParty(ctx, world);
   ghosts = initGhosts(ctx, host, world);
@@ -604,14 +760,12 @@ export function initWorld(ctx) {
     me.pendingFriend = userId;
   }
 
-  // ---------- pet ----------
-  const pet = createPet(scene);
+  // ---------- pet (pet.js: the same pet for everyone, with tricks) ----------
   let lastPetPoints = 0;
   function tapPet() {
-    const info = pet.pet(); if (!info) return;
-    ui.toast(info.kind === 'cat' ? `${info.name} purrs 💕` : `${info.name} wags happily 🐾`);
+    pet.tap();
     const now = Date.now();
-    if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${info.name}` }); }
+    if (now - lastPetPoints > 10 * 60 * 1000) { lastPetPoints = now; bus.emit('points:award', { amount: 1, reason: `petting ${pet.name}` }); }
   }
 
   // ---------- sitting ----------
@@ -641,7 +795,7 @@ export function initWorld(ctx) {
   /** Walk to any room of the house (through doorways and up/down the stairs). False if it doesn't exist. */
   ctx.provide('world.goToRoom', (roomId) => (layout?.rooms.has(roomId) ? goTo(roomId, null) : false));
   /** Which floor I'm on (0 = ground floor) and how many floors there are. */
-  ctx.provide('world.floor', () => ({ floor: curFloor(), floors: layout?.floors.length || 0, name: layout?.floors[curFloor()]?.name || '' }));
+  ctx.provide('world.floor', () => ({ floor: curFloor(), floors: layout?.floors.length || 0, roof: onRoof(), name: onRoof() ? 'Rooftop' : layout?.floors[curFloor()]?.name || '' }));
 
   function startSit() {
     const { slot, item } = me.pendingSit; me.pendingSit = null;
@@ -718,10 +872,10 @@ export function initWorld(ctx) {
         else { p.addScaledVector(d, step / len); step = 0; if (Math.hypot(d.x, d.z) > 0.01) turnToward(me.holder, Math.atan2(d.x, d.z), dt); }
       }
       moving = true;
-      if (tr.i >= tr.pts.length) finishTransit();
+      if (tr.i >= tr.pts.length) { if (tr.onDone) { me.transit = null; tr.onDone(); } else finishTransit(); }
     } else if ((fwdKey || sideKey) && !ui.isPanelOpen()) {
       // keyboard: W walks AWAY from the camera, whatever way the camera is turned. Shift = run.
-      const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+      const fx = fp.on ? Math.sin(fp.yaw) : -Math.sin(camYaw), fz = fp.on ? Math.cos(fp.yaw) : -Math.cos(camYaw);
       const kv = new THREE.Vector3(fx * fwdKey - fz * sideKey, 0, fz * fwdKey + fx * sideKey).normalize();
       me.path = []; clearPlans(); standUp();
       me.run = k.has('shift');
@@ -748,6 +902,12 @@ export function initWorld(ctx) {
       // arrived: do what I came for
       if (me.pendingSit) startSit();
       else if (me.route.length) startTransit(me.route[0]);
+      else if (me.pendingRoof) { const k = me.pendingRoof; me.pendingRoof = null; rooftop.use(k); }
+      else if (me.pendingStreet) {
+        const t = me.pendingStreet; me.pendingStreet = null;
+        const pts = street.walkPoints(t.houseId);
+        if (pts) { pts.unshift(me.holder.position.clone()); me.transit = { pts, i: 1, stairs: false, onDone: () => street.enter(t.houseId, t.name) }; }
+      }
       else if (me.pendingFriend) {
         const r = remotes.get(me.pendingFriend); me.pendingFriend = null;
         if (r && r.roomId === roomRef.id) { me.faceAt = new THREE.Vector3(r.local.x, 0, r.local.z); emotes.play('wave'); }
@@ -780,10 +940,16 @@ export function initWorld(ctx) {
       if (mesh) mesh.scale.setScalar(1 + Math.sin((t / 0.35) * Math.PI) * 0.06);
       if (!t) bounces.delete(id);
     }
-    pet.update(dt, { me: { x: me.pos.x, z: me.pos.z, sitting: !!me.sit }, walk, night: lastLight?.night || 0 });
-    together.update(dt); party.update(dt); ghosts.update(dt);
+    pet.update(dt, { night: lastLight?.night || 0 });
+    together.update(dt); party.update(dt); ghosts.update(dt); rooftop.update(dt); street.update(dt);
+    // the elevator cab rides with me (when I'm inside it)
+    if (me.transit?.elevator && outside.elevator) {
+      const cab = outside.elevator.cab, p = me.holder.position;
+      if (Math.hypot(p.x - cab.position.x, p.z - cab.position.z) < 0.5) cab.position.y = p.y;
+    }
     lightCheck -= dt;
     if (lightCheck <= 0) { lightCheck = 30; applyDaylight(); } // the light follows the clock
+    sky.update(dt, myHour(), lastLight?.night || 0);
 
     // camera: smooth turn toward the chosen angle; look at my room (or at me on the stairs).
     camYaw += (camYawTarget - camYaw) * Math.min(1, dt * 7);
@@ -793,9 +959,18 @@ export function initWorld(ctx) {
     const c = roomCenter(roomRef.id);
     focus.set(c.x + (me.holder.position.x - c.x) * follow, (me.transit ? me.holder.position.y : c.y) + 0.5, c.z + (me.holder.position.z - c.z) * follow);
     camTarget.lerp(focus, Math.min(1, dt * (me.transit ? 6 : 4)));
-    const dist = fitDistance() * zoom;
-    camera.position.copy(camTarget).addScaledVector(camDir, dist);
-    camera.lookAt(camTarget);
+    if (fp.on) {
+      // first person: eyes at head height, looking where I walk (drag to look around)
+      if (moving) { let d = me.holder.rotation.y - fp.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); fp.yaw += d * Math.min(1, dt * 3); }
+      const eye = me.holder.position.clone(); eye.y += me.sit ? 0.85 : 1.12;
+      camera.position.copy(eye);
+      camera.lookAt(eye.x + Math.sin(fp.yaw) * Math.cos(fp.pitch), eye.y + Math.sin(fp.pitch), eye.z + Math.cos(fp.yaw) * Math.cos(fp.pitch));
+      camTarget.copy(eye);
+    } else {
+      const dist = fitDistance() * zoom;
+      camera.position.copy(camTarget).addScaledVector(camDir, dist);
+      camera.lookAt(camTarget);
+    }
     // the sun's shadows follow the camera, so the whole building can have shadows
     sun.position.copy(camTarget).add(new THREE.Vector3(6, 12, 8)); sun.target.position.copy(camTarget);
     renderer.render(scene, camera);
@@ -806,26 +981,27 @@ export function initWorld(ctx) {
   host.append(fade);
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
-    if (s.house !== prev.house) pet.setHouse(s.house); // before the room, so spawn() can place the pet
-    if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) ghosts.load().then(() => ghosts.lookForGhost()); }
+    if (s.house !== prev.house) pet.setHouse(s.house);
+    if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) { ghosts.load().then(() => ghosts.lookForGhost()); street.refresh(); } }
     if (!s.house) {
-      if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); }
+      if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); if (street?.group) scene.remove(street.group); }
     } else {
       const room = currentRoom(s);
       const firstTime = !layout;
       if (s.house !== prev.house || !layout) {
         // the house changed (or we just came in): rebuild the building, keep my spot if my room is still there
-        const keep = !firstTime && room && roomRef?.id === room.id;
+        const wasRoof = onRoof();
+        const keep = !firstTime && room && (roomRef?.id === room.id || wasRoof);
         buildHouse(s.house);
         if (room) {
-          enterRoom(room);
+          enterRoom(wasRoof && layout.roof ? layout.roof.room : room); // still on the roof after a rebuild
           if (keep) {
             if (me.path.length && walk) me.path = walk.pathToPoint(me.pos, me.path[me.path.length - 1]) || []; // furniture moved: re-plan
             if (me.sit && !room.items.some((i) => i.id === me.sit.item)) standUp(); // my seat was removed
             if (walk && !walk.isFreeAt(me.pos.x, me.pos.z)) { const f = walk.nearestFree(me.pos.x, me.pos.z); me.pos.set(f.x, 0, f.z); }
           } else spawn();
         }
-      } else if (room && room.id !== roomRef?.id) {
+      } else if (room && s.roomId !== prev.roomId && room.id !== roomRef?.id) {
         enterRoom(room);
         if (!movingSelf) { // a jump (room tabs, Pip's tour, the robot): a quick fade, then appear at the door
           fade.style.transition = 'none'; fade.style.opacity = '1';
@@ -835,14 +1011,23 @@ export function initWorld(ctx) {
       }
     }
     if (s.players !== prev.players) syncRemotes();
-    if (s.mode === 'build' && prev.mode !== 'build') { clearPlans(); standUp(); emotes.close(); me.transit = null; } // building: get off the sofa
+    if (s.mode === 'build' && prev.mode !== 'build') { // building: get off the sofa, back to the house view, down from the roof
+      clearPlans(); standUp(); emotes.close(); me.transit = null;
+      if (fp.on) setFirstPerson(false);
+      if (onRoof()) { const r = currentRoom(s); if (r) { enterRoom(r); spawn(); } }
+    }
     if (s.mode !== prev.mode) updateVisibility(true);
-    rotateBtn.style.display = s.house ? 'block' : 'none';
+    rotateBtn.style.display = s.house && !fp.on ? 'block' : 'none';
+    eyeBtn.style.display = s.house && s.mode !== 'build' ? 'block' : 'none';
     emotes.button.style.display = s.house && s.mode !== 'build' ? 'block' : 'none';
     floorUi.render();
   });
 
-  bus.on('room:goto', ({ roomId }) => { store.set({ roomId }); });
+  bus.on('room:goto', ({ roomId }) => {
+    // on the roof, store.roomId is still the top floor's room: jumping "there" must still bring me down
+    if (onRoof() && roomId === store.get().roomId) { const r = currentRoom(store.get()); if (r) { enterRoom(r); spawn(); } return; }
+    store.set({ roomId });
+  });
   rebuildMyAvatar();
 
   initWardrobe(ctx);

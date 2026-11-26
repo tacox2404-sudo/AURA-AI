@@ -8,16 +8,26 @@
 import { GAMES } from './games.js';
 import { LIFE } from './life.js';
 import { TRIPS } from './trips.js';
+import { MINIGAMES } from './minigames.js';
 import './trips.css';
+import { WATCH } from './watch.js';
+import './watch.css';
+import { CALL, CALL_KEY } from './call.js';
+import './call.css';
 
-export const REGISTRY = { ...GAMES, ...LIFE, ...TRIPS };
+export const REGISTRY = { ...GAMES, ...MINIGAMES, ...LIFE, ...TRIPS, ...WATCH, ...CALL };
 
 export function initActivities(ctx) {
   const { bus, store, backend, ui } = ctx;
 
   // Live state listeners for whatever activity panel is open
   const remoteHandlers = new Set();
-  bus.on('live:state', (e) => { for (const fn of remoteHandlers) fn(e); });
+  bus.on('live:state', (e) => {
+    for (const fn of remoteHandlers) fn(e);
+    // Someone shared a Google Meet link: tell everyone else, even if the call panel is closed
+    const m = e.key === CALL_KEY && e.value?.meet;
+    if (m && m.by !== store.get().me?.id) ui.toast(`📞 ${store.get().house?.members?.[m.by]?.name || 'Someone'} wants to video call! Tap ⋯ More → 📞 Call`, 6000);
+  });
   const liveHandlers = new Map(); // type -> Set
   for (const t of ['draw']) bus.on(`live:${t}`, (e) => { for (const fn of liveHandlers.get(t) || []) fn(e); });
 
@@ -84,6 +94,10 @@ export function initActivities(ctx) {
   ctx.provide('activities.open', openActivity);
   ctx.provide('activities.list', () => Object.entries(REGISTRY).map(([id, a]) => ({ id, title: a.title, icon: a.icon })));
   ui.addDockButton({ id: 'play', icon: '🎲', label: 'Play', onClick: () => openActivity('games', { room: store.get().house?.rooms.find((r) => r.id === store.get().roomId) }), order: 35 });
+  // Movie picker in the ⋯ More ribbon too, so anyone can ask "what should we watch?"
+  ui.addDockButton({ id: 'watch', icon: '🎬', label: 'Watch', onClick: () => openActivity('watch', { key: 'house:watch-next' }), order: 46, group: 'more' });
   // Trip planner in the "⋯ More" ribbon, so every house can plan a trip (not only rooms with a globe)
   ui.addDockButton({ id: 'trip', icon: '✈️', label: 'Trips', onClick: () => openActivity('trip', { key: 'house:trip-planner' }), order: 45, group: 'more' });
+  // Video call (FaceTime / Google Meet) in the ⋯ More ribbon: works from any room
+  ui.addDockButton({ id: 'call', icon: '📞', label: 'Call', onClick: () => openActivity('call', { key: CALL_KEY }), order: 44, group: 'more' });
 }

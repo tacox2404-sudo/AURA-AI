@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 
+export const ROOF = '__roof';  // the id of the rooftop (not a saved room: it's part of every building)
 export const FLOOR_H = 3.0;     // floor to floor height (walls are 2.6 high)
 export const PER_FLOOR = 2;     // rooms side by side on one floor
 const STAIR_R = 1.05;           // outer radius of the spiral staircase
@@ -73,7 +74,54 @@ export function layoutBuilding(house, walks) {
   const toGlobal = (id, x, z, y = 0) => { const r = rooms.get(id); return new THREE.Vector3(r.ox + r.w / 2 + x, r.y + y, r.oz + r.d / 2 + z); };
   /** centre of a cell of a room, in building coordinates */
   const cellGlobal = (id, c) => { const r = rooms.get(id); return new THREE.Vector3(r.ox + c.x + 0.5, r.y, r.oz + c.z + 0.5); };
-  return { floors, rooms, links, stair, xMax, toGlobal, cellGlobal };
+  // ---- the rooftop: a terrace on top of everything, reached by one more turn of the spiral or the elevator
+  const top = floors[floors.length - 1];
+  let roof = null; let elevator = null;
+  if (top) {
+    const N = floors.length;
+    const w = Math.max(6, Math.floor(stair.x - WALK_R - 0.25)), d = Math.max(6, top.depth);
+    const roofRoom = { id: ROOF, name: 'Rooftop', size: [w, d], items: roofItems(w, d), theme: { floor: '#cfc6b6', wall: '#e8e2d8', accent: '#e76f51', wood: '#b07d4f' } };
+    roof = { room: roofRoom, floor: N, index: 0, ox: 0, oz: 0, y: N * FLOOR_H, w, d, left: null, right: null, isRoof: true };
+    rooms.set(ROOF, roof);
+    roof.landing = { x: Math.min(w - 1, Math.floor(stair.x - WALK_R - 0.55)), z: Math.floor(stair.z) };
+    links.push({ type: 'stairs', a: top.balcony.roomId, b: ROOF, cellA: top.balcony.cell, cellB: roof.landing, floor: N - 1 });
+    // the glass elevator stands just in front of the spiral staircase and stops on every floor + the roof
+    elevator = { x: stair.x, z: stair.z + 2.75 };
+    roof.elevatorCell = { x: Math.min(w - 1, Math.floor(elevator.x - 1.15)), z: Math.floor(elevator.z) };
+  }
+  return { floors, rooms, links, stair, xMax, toGlobal, cellGlobal, roof, elevator };
+}
+
+/** What stands on the roof (cells of the roof grid). They block walking like furniture. */
+function roofItems(w, d) {
+  const items = [
+    { id: 'roof_telescope', kind: 'telescope', x: 1, z: 1, size: [1, 1] },
+    { id: 'roof_fireworks', kind: 'fireworks', x: 3, z: 1, size: [1, 1] },
+    { id: 'roof_hottub', kind: 'hottub', x: 1, z: d - 3, size: [2, 2] },
+    { id: 'roof_lounger1', kind: 'lounger', x: 4, z: d - 3, size: [1, 2] },
+    { id: 'roof_lounger2', kind: 'lounger', x: 5, z: d - 3, size: [1, 2] },
+    { id: 'roof_plant1', kind: 'pot', x: 0, z: 0, size: [1, 1] },
+    { id: 'roof_plant2', kind: 'pot', x: 0, z: d - 1, size: [1, 1] },
+  ];
+  return items.filter((i) => i.x + i.size[0] <= w - 2 && i.z + i.size[1] <= d); // keep the right side free (stairs + elevator)
+}
+
+/** The rooftop's walk grid needs these two helpers (roof items carry their own size). */
+export const roofFootprint = (item) => item.size || [1, 1];
+export const roofItemDef = () => ({});
+
+/**
+ * Riding the elevator from one balcony room (or the roof) to another: points to walk through.
+ * fromId / toId: balcony room ids or ROOF.
+ */
+export function elevatorPath(layout, fromId, toId) {
+  const E = layout.elevator;
+  const A = layout.rooms.get(fromId), B = layout.rooms.get(toId);
+  const cellOf = (id) => (id === ROOF ? layout.roof.elevatorCell : layout.floors[layout.rooms.get(id).floor].balcony.cell);
+  const outside = (info, cell) => (info.isRoof ? null : new THREE.Vector3(info.ox + info.w + 0.7, info.y, info.oz + cell.z + 0.5));
+  const front = (y) => new THREE.Vector3(E.x - 1.15, y, E.z);
+  const cab = (y) => new THREE.Vector3(E.x, y, E.z);
+  return [layout.cellGlobal(fromId, cellOf(fromId)), outside(A, cellOf(fromId)), front(A.y), cab(A.y), cab(B.y), front(B.y), outside(B, cellOf(toId)), layout.cellGlobal(toId, cellOf(toId))].filter(Boolean);
 }
 
 /** The rooms to walk through to get from one room to another: list of { link, from, to }, or null. */
@@ -106,14 +154,15 @@ export function linkPath(layout, link, from) {
   // stairs: out of the balcony door, along the balcony, round the spiral, and in again upstairs
   const { stair } = layout;
   const lo = layout.rooms.get(link.a), hi = layout.rooms.get(link.b);
-  const outside = (info, cell) => new THREE.Vector3(info.ox + info.w + 0.7, info.y, info.oz + cell.z + 0.5);
+  if (link.type === 'elevator') return up ? elevatorPath(layout, link.a, link.b) : elevatorPath(layout, link.b, link.a);
+  const outside = (info, cell) => (info.isRoof ? null : new THREE.Vector3(info.ox + info.w + 0.7, info.y, info.oz + cell.z + 0.5));
   const foot = (y) => new THREE.Vector3(stair.x - WALK_R - 0.55, y, stair.z);
-  const pts = [layout.cellGlobal(link.a, link.cellA), outside(lo, link.cellA), foot(lo.y)];
+  const pts = [layout.cellGlobal(link.a, link.cellA), outside(lo, link.cellA), foot(lo.y)].filter(Boolean);
   for (let i = 0; i <= STEPS; i++) {
     const t = i / STEPS, th = Math.PI + t * Math.PI * 2;
     pts.push(new THREE.Vector3(stair.x + Math.cos(th) * WALK_R, lo.y + t * FLOOR_H, stair.z + Math.sin(th) * WALK_R));
   }
-  pts.push(foot(hi.y), outside(hi, link.cellB), layout.cellGlobal(link.b, link.cellB));
+  pts.push(...[foot(hi.y), outside(hi, link.cellB), layout.cellGlobal(link.b, link.cellB)].filter(Boolean));
   return up ? pts : pts.reverse();
 }
 
@@ -162,14 +211,15 @@ export function buildOutside(layout, house) {
   const wood = '#b07d4f', woodDark = '#8a5a35', rail = '#f4efe6', metal = '#4a4a55';
 
   // --- garden: grass all around, a stone path to the front door of the entrance
-  const grass = new THREE.Mesh(new THREE.BoxGeometry(90, 0.3, 90), mat('#8fc47a', { roughness: 1 }));
+  const grass = new THREE.Mesh(new THREE.BoxGeometry(90, 0.3, 90), new THREE.MeshStandardMaterial({ color: '#8fc47a', roughness: 1 })); // own material: seasons recolour it
+  const bushes = [];
   grass.position.set(layout.xMax / 2, -0.36, 4); grass.receiveShadow = true; group.add(grass);
   const entrance = layout.rooms.get(floors[0]?.rooms[0]);
   if (entrance) {
     for (let i = 0; i < 6; i++) box(group, 0.9, 0.06, 0.6, i % 2 ? '#d9d2c5' : '#cfc6b6', entrance.ox + entrance.w / 2 + Math.sin(i) * 0.15, -0.2, entrance.d + 0.7 + i * 0.85);
     // a few round bushes and a lamp post along the path
     for (const s of [-1, 1]) for (const k of [1.6, 4.2]) {
-      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0), mat(k > 2 ? '#5e9c5a' : '#6fae64')); b.position.set(entrance.ox + entrance.w / 2 + s * 1.6, 0.1, entrance.d + k); b.castShadow = true; group.add(b);
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0), new THREE.MeshStandardMaterial({ color: k > 2 ? '#5e9c5a' : '#6fae64', flatShading: true })); bushes.push(b); b.position.set(entrance.ox + entrance.w / 2 + s * 1.6, 0.1, entrance.d + k); b.castShadow = true; group.add(b);
     }
   }
 
@@ -233,9 +283,10 @@ export function buildOutside(layout, house) {
   }
 
   // --- the spiral staircase: a centre pole, wedge steps and a handrail, one turn per floor
-  for (let f = 0; f < floors.length - 1; f++) {
+  const flights = floors.length - 1 + (layout.roof ? 1 : 0); // one more turn up to the roof
+  for (let f = 0; f < flights; f++) {
     const g = new THREE.Group(); group.add(g); stairs.push(g);
-    const y0 = floors[f].y;
+    const y0 = f * FLOOR_H;
     cyl(g, 0.09, FLOOR_H + 0.1, metal, stair.x, y0 + FLOOR_H / 2, stair.z, 10);
     const railPts = [];
     for (let i = 0; i < STEPS; i++) {
@@ -268,5 +319,98 @@ export function buildOutside(layout, house) {
       group.add(s); signs.push({ sprite: s, floor: info.floor, room: id }); tapTargets.push(s);
     }
   }
-  return { group, perFloor, stairs, signs, tapTargets };
+  const roof = layout.roof ? buildRoof(layout) : null;
+  if (roof) group.add(roof.group);
+  const elevator = layout.elevator ? buildElevator(layout) : null;
+  if (elevator) group.add(elevator.group);
+  // the top floor's balcony gets an "up to the roof" sign
+  if (layout.roof) {
+    const top = floors[floors.length - 1];
+    const s = signSprite('⬆ Rooftop', { bg: 'rgba(42,34,64,.88)', fg: '#ffe08a', scale: 0.9 });
+    s.position.set(stair.x - WALK_R - 0.55, top.y + 2.5, stair.z); s.userData.stairs = 'up'; s.userData.floor = top.level;
+    perFloor[top.level].add(s); signs.push({ sprite: s, floor: top.level }); tapTargets.push(s);
+    const r = signSprite(`⬇ ${top.name}`, { bg: 'rgba(42,34,64,.88)', fg: '#bfe3ff', scale: 0.9 });
+    r.position.set(stair.x - WALK_R - 0.55, layout.roof.y + 2.2, stair.z); r.userData.stairs = 'down'; r.userData.floor = layout.roof.floor;
+    roof.group.add(r); signs.push({ sprite: r, floor: layout.roof.floor }); tapTargets.push(r);
+  }
+  const bounds = { x0: -1, x1: stair.x + 2, z0: -1, z1: Math.max(...floors.map((f) => f.depth)) + 6, top: floors.length * FLOOR_H + 2 };
+  return { group, perFloor, stairs, signs, tapTargets, garden: { grass, bushes }, bounds, roof, elevator };
+}
+
+/** The rooftop terrace: deck, glass railing, string lights, and the things to do up there. */
+function buildRoof(layout) {
+  const info = layout.roof; const { w, d, y } = info;
+  const group = new THREE.Group(); const items = []; const bulbs = [];
+  const at = (x, z) => new THREE.Vector3(x, y, z);
+  // the deck (a light stone floor) + supports at the outer corners
+  const floorMesh = box(group, w, 0.22, d, '#d9d2c5', w / 2, y - 0.11, d / 2);
+  floorMesh.userData.roofFloor = true;
+  for (let x = 1; x < w; x += 2) box(group, 0.02, 0.005, d - 0.1, '#c9c1b2', x, y + 0.003, d / 2).castShadow = false;
+  const below = layout.floors[layout.floors.length - 1];
+  for (const [x, z] of [[w - 0.2, 0.2], [w - 0.2, d - 0.2]]) if (x > below.right + 0.3) box(group, 0.2, FLOOR_H - 0.2, 0.2, '#efe7da', x, y - FLOOR_H / 2 - 0.1, z);
+  // a low wall with a glass rail on top, all round (open on the right, where the stairs and elevator are)
+  const glass = mat('#cfe8ff', { transparent: true, opacity: 0.35, roughness: 0.1 });
+  const edge = (len, x, z, alongX) => {
+    box(group, alongX ? len : 0.16, 0.45, alongX ? 0.16 : len, '#efe7da', x, y + 0.22, z);
+    const g = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.04, 0.5, alongX ? 0.04 : len), glass); g.position.set(x, y + 0.7, z); group.add(g);
+  };
+  edge(w, w / 2, 0.08, true); edge(w, w / 2, d - 0.08, true); edge(d, 0.08, d / 2, false);
+  // string lights between poles at the corners (they glow at night)
+  const poles = [[0.3, 0.3], [w - 2.4, 0.3], [w - 2.4, d - 0.3], [0.3, d - 0.3]];
+  for (const [x, z] of poles) cyl(group, 0.04, 2.3, '#4a4a55', x, y + 1.15, z, 6);
+  const bulbMat = new THREE.MeshStandardMaterial({ color: '#fff1c1', emissive: '#ffcc66', emissiveIntensity: 0.2 });
+  for (let k = 0; k < 4; k++) {
+    const [ax, az] = poles[k], [bx, bz] = poles[(k + 1) % 4];
+    const n = Math.round(Math.hypot(bx - ax, bz - az) / 0.6);
+    for (let i = 1; i < n; i++) {
+      const t = i / n; const sag = Math.sin(t * Math.PI) * 0.35;
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), bulbMat); b.position.set(ax + (bx - ax) * t, y + 2.25 - sag, az + (bz - az) * t); group.add(b);
+    }
+  }
+  bulbs.push(bulbMat);
+  // the things to do
+  const make = (it) => {
+    const g = new THREE.Group(); const [sw, sd] = it.size;
+    g.position.copy(at(it.x + sw / 2, it.z + sd / 2));
+    if (it.kind === 'telescope') {
+      for (const a of [0, 2.1, 4.2]) { const leg = box(g, 0.04, 0.9, 0.04, '#4a4a55', Math.sin(a) * 0.18, 0.4, Math.cos(a) * 0.18); leg.rotation.set(Math.cos(a) * 0.3, 0, -Math.sin(a) * 0.3); }
+      const tube = cyl(g, 0.08, 0.8, '#2b3a67', 0, 1.0, 0, 10, 0.11); tube.rotation.x = -0.9; tube.rotation.z = 0.3;
+    }
+    if (it.kind === 'fireworks') {
+      box(g, 0.7, 0.4, 0.5, '#c0392b', 0, 0, 0); box(g, 0.72, 0.06, 0.52, '#f1c40f', 0, 0.3, 0);
+      for (let i = 0; i < 6; i++) cyl(g, 0.04, 0.35, ['#ff4fa3', '#4fd1ff', '#ffd23f'][i % 3], -0.2 + (i % 3) * 0.2, 0.4, -0.1 + Math.floor(i / 3) * 0.2, 6);
+    }
+    if (it.kind === 'hottub') {
+      box(g, 1.9, 0.55, 1.9, '#b07d4f', 0, 0, 0);
+      const water = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), new THREE.MeshStandardMaterial({ color: '#5ec8e5', emissive: '#1d7fa6', emissiveIntensity: 0.4, transparent: true, opacity: 0.85 }));
+      water.position.y = 0.5; g.add(water); g.userData.water = water;
+    }
+    if (it.kind === 'lounger') { box(g, 0.6, 0.12, 1.6, '#f4efe6', 0, 0.28, 0.1); const back = box(g, 0.6, 0.5, 0.1, '#f4efe6', 0, 0.35, -0.6); back.rotation.x = -0.5; box(g, 0.64, 0.25, 1.7, '#8a5a35', 0, 0, 0.05); }
+    if (it.kind === 'pot') plantPot(g, 0, 0, 0, true);
+    g.traverse((o) => { o.userData.roofItem = it.kind; o.userData.roofItemId = it.id; });
+    group.add(g); items.push(g);
+  };
+  info.room.items.forEach(make);
+  return { group, floorMesh, items, bulbs };
+}
+
+/** The glass elevator: a see-through shaft from the garden to the roof, and a cab that rides up and down. */
+function buildElevator(layout) {
+  const E = layout.elevator; const group = new THREE.Group();
+  const H = (layout.roof ? layout.roof.y : layout.floors.length * FLOOR_H) + 2.6;
+  const glass = mat('#cfe8ff', { transparent: true, opacity: 0.22, roughness: 0.05 });
+  for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) box(group, 0.08, H, 0.08, '#e8e8f0', E.x + dx, H / 2 - 0.2, E.z + dz, { metalness: 0.5 });
+  for (const [dx, dz, ax] of [[0, -0.6, true], [0, 0.6, true], [0.6, 0, false]]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(ax ? 1.2 : 0.03, H, ax ? 0.03 : 1.2), glass); p.position.set(E.x + dx, H / 2 - 0.2, E.z + dz); group.add(p);
+  }
+  box(group, 1.4, 0.2, 1.4, '#e8e8f0', E.x, H - 0.1, E.z, { metalness: 0.5 });
+  // the cab: floor, roof, a warm light, a little handrail
+  const cab = new THREE.Group(); cab.position.set(E.x, 0, E.z);
+  box(cab, 1.1, 0.08, 1.1, '#3a3a48', 0, -0.04, 0); box(cab, 1.1, 0.08, 1.1, '#e8e8f0', 0, 2.3, 0);
+  const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.5), new THREE.MeshStandardMaterial({ color: '#fff4d6', emissive: '#ffd9a0', emissiveIntensity: 0.8 })); lamp.position.y = 2.27; cab.add(lamp);
+  box(cab, 0.04, 0.04, 0.9, '#e9c46a', 0.5, 0.95, 0, { metalness: 0.6 });
+  cab.traverse((o) => { o.userData.elevator = true; });
+  group.add(cab);
+  // a call button sign at every floor
+  return { group, cab };
 }

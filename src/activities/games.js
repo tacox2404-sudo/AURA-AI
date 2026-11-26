@@ -5,6 +5,7 @@
 // Alone? Use "vs bot" to practise.
 
 import './games.css';
+import { MINIGAME_LIST } from './minigames.js';
 
 // replaceChildren that skips null/false (so conditional children don't print "null")
 const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
@@ -262,9 +263,10 @@ export const GAMES = {
     title: 'Games', icon: '🎲',
     open: (api) => {
       const { h } = api;
-      const list = [['connect4', '🔴 Connect Four', 'Drop discs, get four in a row'], ['tictactoe', '❌ Tic-Tac-Toe', 'Quick classic'], ['draw', '🎨 Draw & Guess', 'One draws, everyone guesses']];
+      const list = [['connect4', '🔴 Connect Four', 'Drop discs, get four in a row'], ['tictactoe', '❌ Tic-Tac-Toe', 'Quick classic'], ['draw', '🎨 Draw & Guess', 'One draws, everyone guesses'],
+        ...MINIGAME_LIST];
       return h('div', { class: 'list' }, ...list.map(([id, t, d]) => h('button', { class: 'row-main', onclick: () => api.open(id, { key: `${api.room?.id || 'house'}:hub:${id}` }) }, h('b', {}, t), h('small', {}, d))),
-        h('p', { class: 'muted small' }, 'More games coming: Battleship, word hunt, pool…'));
+        h('p', { class: 'muted small' }, 'More games coming: word hunt, pool, mini golf…'));
     },
   },
   leaderboard: { title: 'Scores', icon: '🏆', open: (api) => { api.ctx.use('points.open')(); return null; } },
