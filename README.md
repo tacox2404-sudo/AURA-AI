@@ -6,6 +6,8 @@ Hang out live or at different times, play small games, plan trips, keep memories
 **Play the latest version:** https://play-aura.netlify.app
 (demo mode until Supabase is set up: accounts live in your browser only)
 
+**On your phone:** open the link, then *Share → Add to Home Screen* (iPhone, in Safari) or *⋮ → Install app* (Android, in Chrome). It opens full screen like an app, with its own icon. Log in once inside the app and it remembers you.
+
 **New to the team?** Start with [docs/TEAM_START.md](docs/TEAM_START.md).
 
 ## Run it
