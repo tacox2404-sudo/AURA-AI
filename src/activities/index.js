@@ -8,11 +8,12 @@
 import { GAMES } from './games.js';
 import { LIFE } from './life.js';
 import { TRIPS } from './trips.js';
+import { MINIGAMES } from './minigames.js';
 import './trips.css';
 import { WATCH } from './watch.js';
 import './watch.css';
 
-export const REGISTRY = { ...GAMES, ...LIFE, ...TRIPS, ...WATCH };
+export const REGISTRY = { ...GAMES, ...MINIGAMES, ...LIFE, ...TRIPS, ...WATCH };
 
 export function initActivities(ctx) {
   const { bus, store, backend, ui } = ctx;
