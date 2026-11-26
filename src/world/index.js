@@ -24,7 +24,10 @@ import { layoutBuilding, findRoute, linkPath, buildOutside, FLOOR_H } from './bu
 import { buildRoomMesh, setWallCut } from './roomMesh.js';
 import { buildWindows, lightAt, GLOWING } from './daylight.js';
 import { createPet } from './pet.js';
-import { initEmotes } from './emotes.js';
+import { initEmotes, floatEmoji } from './emotes.js';
+import { initTogether } from './together.js';
+import { initParty } from './party.js';
+import { initGhosts } from './ghosts.js';
 import { currentRoom } from '../core/store.js';
 
 export function initWorld(ctx) {
@@ -115,6 +118,8 @@ export function initWorld(ctx) {
     placeLights();
     applyDaylight();
     floorUi.render();
+    party.check(room.id);
+    setTimeout(() => ghosts.lookForGhost(), 700); // after the room has appeared
   }
 
   // Which walls to cut down: on my floor, the ones between the camera and me.
@@ -245,7 +250,7 @@ export function initWorld(ctx) {
         remotes.set(p.userId, r);
       }
       if (r.roomId && r.roomId !== p.roomId && layout.rooms.get(r.roomId)?.floor !== f) r.holder.position.copy(g); // came up the stairs: appear
-      r.roomId = p.roomId; r.local = { x: p.x ?? 0, z: p.z ?? 0 };
+      r.roomId = p.roomId; r.local = { x: p.x ?? 0, z: p.z ?? 0 }; r.name = p.name || 'friend';
       r.sit = !!p.sit; r.ry = p.ry || 0;
       r.target.copy(g);
     }
@@ -539,10 +544,36 @@ export function initWorld(ctx) {
   })();
 
   // ---------- emotes ----------
+  let ghosts = null; // memory ghosts (set up below; the emote hook tells them about my emotes)
   const emotes = initEmotes(ctx, host, scene,
     (userId) => (userId === store.get().me?.id ? { holder: me.holder, av: me.av } : remotes.get(userId)),
-    () => { if (!me.transit) { me.path = []; clearPlans(); } }); // stop walking to act it out (sitting is fine)
+    (id) => { if (!me.transit) { me.path = []; clearPlans(); } ghosts?.noteEmote(id); }); // stop walking to act it out (sitting is fine)
   ctx.provide('world.emote', (id) => emotes.play(id));
+
+  // ---------- together (hugs, hands), dance party, memory ghosts ----------
+  // They get a small "world" object instead of poking at everything in this file.
+  const world = {
+    scene,
+    me: () => ({ pos: me.pos, roomId: roomRef?.id, holder: me.holder, av: me.av, sit: me.sit, moving: me.wasMoving, busy: !!me.transit || me.route.length > 0 }),
+    remotes: () => remotes,
+    toGlobal: (roomId, x, z, y = 0) => (layout?.rooms.has(roomId) ? layout.toGlobal(roomId, x, z, y) : null),
+    roomCenter: (roomId) => roomCenter(roomId),
+    roomInfo: (roomId) => layout?.rooms.get(roomId),
+    bubble: (holder, text) => bubble(holder, text),
+    faceRemote: (id) => { const r = remotes.get(id); if (r?.local && !me.sit) me.faceAt = new THREE.Vector3(r.local.x, 0, r.local.z); },
+    /** walk to a spot in a room (any room); run = hurry */
+    walkTo: (roomId, p, run) => {
+      if (!walk || !roomRef) return;
+      if (roomId === roomRef.id) { me.path = walk.pathToPoint(me.pos, clampToRoom(new THREE.Vector3(p.x, 0, p.z))) || []; me.run = !!run; }
+      else goTo(roomId, { type: 'point', p: new THREE.Vector3(p.x, 0, p.z), run });
+    },
+  };
+  const together = initTogether(ctx, host, world);
+  const party = initParty(ctx, world);
+  ghosts = initGhosts(ctx, host, world);
+  emotes.addAction({ id: 'party', icon: '🪩', label: 'Dance party', short: 'Party', onClick: () => party.toggle() });
+  emotes.addAction({ id: 'ghost', icon: '👻', label: 'Memory ghosts', short: 'Ghost', onClick: () => ghosts.openMenu() });
+  ctx.provide('world.party', () => party.toggle());
 
   // Fit the camera so my whole room (floor + wall height) is on screen, for any screen shape and rotation.
   const tmpR = new THREE.Vector3(), tmpU = new THREE.Vector3(), tmpP = new THREE.Vector3();
@@ -750,6 +781,7 @@ export function initWorld(ctx) {
       if (!t) bounces.delete(id);
     }
     pet.update(dt, { me: { x: me.pos.x, z: me.pos.z, sitting: !!me.sit }, walk, night: lastLight?.night || 0 });
+    together.update(dt); party.update(dt); ghosts.update(dt);
     lightCheck -= dt;
     if (lightCheck <= 0) { lightCheck = 30; applyDaylight(); } // the light follows the clock
 
@@ -775,6 +807,7 @@ export function initWorld(ctx) {
   store.subscribe((s, prev) => {
     if (s.me !== prev.me && (s.me?.avatar !== prev.me?.avatar || s.me?.username !== prev.me?.username)) { rebuildMyAvatar(); sendPresence(true); }
     if (s.house !== prev.house) pet.setHouse(s.house); // before the room, so spawn() can place the pet
+    if (s.house?.id !== prev.house?.id) { ghosts.stop(); together.letGo(); if (s.house) ghosts.load().then(() => ghosts.lookForGhost()); }
     if (!s.house) {
       if (houseGroup) { scene.remove(houseGroup); houseGroup = null; layout = null; roomRef = null; walk = null; rooms.clear(); }
     } else {

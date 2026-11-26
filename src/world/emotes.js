@@ -65,13 +65,20 @@ export function initEmotes(ctx, host, scene, find, beforeMine) {
     gridTemplateColumns: 'repeat(4, 44px)', gap: '4px', padding: '6px', borderRadius: '22px',
     background: 'rgba(255,250,243,.97)', boxShadow: 'var(--shadow, 0 4px 16px rgba(0,0,0,.15))',
   } });
+  // extra actions under the emotes (dance party, leave a ghost...), added with addAction()
+  const actions = [];
+  const chipStyle = { width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: 'transparent', fontSize: '24px', cursor: 'pointer', touchAction: 'manipulation' };
   const renderRow = () => {
     const love = store.get().house?.type === 'love';
     row.replaceChildren(...EMOTES.filter((e) => !e.love || love).map((e) => h('button', {
-      'aria-label': e.label, title: e.label, 'data-emote': e.id,
-      style: { width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: 'transparent', fontSize: '24px', cursor: 'pointer', touchAction: 'manipulation' },
+      'aria-label': e.label, title: e.label, 'data-emote': e.id, style: chipStyle,
       onclick: () => { play(e.id); setOpen(false); },
-    }, e.icon)));
+    }, e.icon)),
+    ...actions.map((a) => h('button', {
+      'aria-label': a.label, title: a.label, 'data-action': a.id,
+      style: { ...chipStyle, gridColumn: 'span 2', width: '92px', borderRadius: '22px', fontSize: '15px', fontWeight: '700', background: '#f1ebff', color: 'var(--ink, #2a2240)' },
+      onclick: () => { setOpen(false); a.onClick(); },
+    }, `${a.icon} ${a.short || a.label}`)));
   };
   let open = false;
   const setOpen = (on) => { open = on; if (on) renderRow(); row.style.display = on ? 'grid' : 'none'; };
@@ -95,5 +102,7 @@ export function initEmotes(ctx, host, scene, find, beforeMine) {
     if (list[n - 1]) play(list[n - 1].id);
   });
 
-  return { button, play, close: () => setOpen(false) };
+  /** Add a button under the emotes: { id, icon, label, short, onClick }. */
+  const addAction = (a) => actions.push(a);
+  return { button, play, close: () => setOpen(false), addAction };
 }
