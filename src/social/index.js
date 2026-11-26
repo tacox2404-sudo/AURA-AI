@@ -2,7 +2,7 @@
 // Accounts, houses (create / join / switch), invites and roles, the live connection,
 // people online, chat and points.
 
-import { loginScreen, housePicker, onboarding, friendly } from './screens.js';
+import { loginScreen, housePicker, onboarding, friendly, installTip } from './screens.js';
 import { loadingLine, knockLine } from './fun.js';
 import { initFriends } from './friends.js';
 import { initTour } from './tour.js';
@@ -33,11 +33,20 @@ export function initSocial(ctx) {
   initTour(ctx); // Pip, the in-game guide
 
   // ---------- flow: login -> pick house -> enter ----------
+  // "Add to home screen" prompt (Android Chrome): keep the event so the Home page can offer an Install button
+  let installEvent = null;
+  addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; });
+  addEventListener('appinstalled', () => { installEvent = null; });
+  const autoKey = (me) => `op:autoEnter:${me.id}`;
+
   async function start() {
     ui.setDockVisible(false);
     const me = await backend.getSession();
     if (!me) return loginScreen(ctx, { onDone: (u) => afterLogin(u), invited: !!joinParam });
-    afterLogin(me);
+    // Someone we remember: no login page. Invite link or "go straight in" jumps into a house; otherwise the Welcome back home page.
+    if (joinParam || safeGet(autoKey(me)) === '1') return afterLogin(me);
+    store.set({ me });
+    showPicker({ welcome: true });
   }
 
   async function afterLogin(me) {
@@ -58,13 +67,17 @@ export function initSocial(ctx) {
     showPicker();
   }
 
-  async function showPicker() {
+  async function showPicker({ welcome = false } = {}) {
     leaveHouse();
     ui.setDockVisible(false);
     const me = store.get().me;
     const houses = await backend.listMyHouses(me.id);
+    let pending = 0; // friend requests waiting for an answer
+    if (welcome) { try { pending = (await backend.listFriends()).filter((f) => f.status === 'incoming').length; } catch { /* offline: no badge */ } }
     housePicker(ctx, {
       me, houses, joinCode: joinParam,
+      welcome, lastId: safeGet('op:lastHouse'), pending, install: welcome ? installTip(ctx, installEvent) : null,
+      autoEnter: safeGet(autoKey(me)) === '1', onAutoEnter: (on) => safeSet(autoKey(me), on ? '1' : '0'),
       onOpen: openHouse,
       onCreate: () => onboarding(ctx, { me, onCancel: showPicker, onDone: createHouse }),
       onJoin: async (code) => { ui.toast(knockLine()); const { house, role } = await backend.joinWithCode(code, me); joinParam = ''; enterHouse(house, role); },
