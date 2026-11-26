@@ -278,6 +278,7 @@ export const LIFE = {
         const f = {}; for (const k of ['from', 'to', 'depart', 'ret']) f[k] = h('input', { value: plan[k] || '', type: k === 'depart' || k === 'ret' ? 'date' : 'text', placeholder: { from: 'From (city)', to: 'To (city)' }[k] });
         const item = h('input', { placeholder: 'Packing or to-do item' });
         fill(root, 
+          h('button', { class: 'primary wide', onclick: () => api.open('trip', { key: 'house:trip-planner' }) }, '✨ Where should we go next? (ideas + Skyscanner)'),
           h('div', { class: 'card form' }, h('div', { class: 'grid2' }, f.from, f.to, f.depart, f.ret),
             h('button', { class: 'primary', onclick: () => { for (const k in f) plan[k] = f[k].value; api.save(plan); draw(); api.award(3, 'planned a trip'); } }, 'Save trip')),
           plan.to ? h('div', { class: 'card' }, h('h4', {}, `Trip to ${plan.to}`), plan.depart ? h('p', {}, `⏳ ${daysUntil(plan.depart)} days to go`) : null,

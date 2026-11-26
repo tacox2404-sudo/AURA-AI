@@ -1,0 +1,12 @@
+/* Trip planner styles (owned by Activities). Phone first: chips wrap instead of scrolling. */
+.trip .trip-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.trip .trip-chips .chip { font-size: .85rem; padding: .4em .8em; }
+.trip .opt-label { font-weight: 700; margin-top: 4px; }
+.trip .trip-idea-head { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.trip .trip-idea p { margin: 4px 0 8px; }
+.trip .trip-idea.match { border: 2px solid #ff8fab; }
+.trip .trip-match { color: #d6336c; font-weight: 700; }
+.trip .trip-distance { background: linear-gradient(135deg, #fff0f5, #eef6ff); }
+.trip .trip-distance .btn.wide { display: block; text-align: center; margin: 6px 0; }
+.trip details { margin-top: 6px; }
+.trip details .field { display: block; margin-top: 6px; }
