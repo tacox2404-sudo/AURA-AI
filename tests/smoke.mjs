@@ -5,7 +5,7 @@
 // It checks: sign up, create each house type, wardrobe, every room renders,
 // build mode, AI room creation, every activity opens, two players see each other,
 // chat, a Connect Four move syncs between players, and invite links give the right role
-// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, a friend can visit an opened house as a guest, the in-game guide (Pip) greets a new player, can be skipped and reopened, and a player can sit on a seat while the other player sees it.
+// (housemate link -> housemate, guest link -> guest), the owner can promote a guest, a member can leave, a friend request can be sent and accepted, a friend can visit an opened house as a guest, the in-game guide (Pip) greets a new player, can be skipped and reopened, a player can sit on a seat while the other player sees it, and a returning player gets a Welcome back page instead of a login.
 
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -224,6 +224,15 @@ try {
   await g.click('text=Explain this room');
   await g.waitForFunction(() => /Entrance/.test(document.querySelector('.gd-text')?.textContent || ''), null, { timeout: 8000 });
   await g.click('.gd-skip');
+
+  log('returning player: Welcome back page (no login), Continue enters the house');
+  await g.reload(); await g.waitForTimeout(1200);
+  await g.waitForFunction(() => /Welcome back, tester_g/.test(document.body.innerText), null, { timeout: 15000 });
+  if (await g.locator('input[type=password]').count()) throw new Error('A returning player was shown a login');
+  await g.click('text=Continue to');
+  await g.waitForFunction(() => !!window.__ourplace.store.get().house, null, { timeout: 15000 });
+  await g.evaluate(() => window.__ourplace.use('social.signOut')()); // log out: the login now greets by name, username filled in
+  await g.waitForFunction(() => /Welcome back, tester_g/.test(document.querySelector('#al-form h3')?.textContent || '') && document.querySelector('#ourplace-username')?.value === 'tester_g', null, { timeout: 15000 });
   await gctx.close();
 
   await a.screenshot({ path: 'tests/last-smoke.png' });
