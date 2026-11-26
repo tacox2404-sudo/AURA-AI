@@ -1,47 +1,23 @@
 // FURNITURE CATALOG (owned by Building).
-// Every item is built from simple boxes and cylinders, so we need no 3D files yet.
-// Later you can swap any item for a real CC0 model (Kenney / Quaternius) by
-// replacing its build() function with a GLTF loader. The id must stay the same.
-//
+// The first 45 items live here; src/build/catalogMore.js has the rest; src/build/catalogInfo.js gives EVERY item
+// its cluster, description and style tags (that is what the catalogue screen shows).
 // Item fields:
 //   id        unique id, saved in houses (never rename one that is in use)
-//   name      shown in the build palette
-//   cat       palette category
+//   name      shown in the catalogue
+//   cat       old palette category (kept for old code and seats: 'Seating' items can be sat on)
+//   cluster   catalogue group (see CLUSTERS)      desc / style  text and tags for the catalogue
 //   size      [w, d] in floor cells
 //   wall      true = prefers to stand against the back wall
 //   activity  what opens when someone taps it (see src/activities/registry.js)
 //   build(t)  returns a THREE.Group; t = room theme colours { floor, wall, accent, wood }
 
-import * as THREE from 'three';
+import { mat, box, cyl, ball, legs, board, G } from './shapes.js';
+import { MORE } from './catalogMore.js';
+import { INFO, CLUSTERS } from './catalogInfo.js';
 
-const matCache = new Map();
-export function mat(color, opts = {}) {
-  const key = color + JSON.stringify(opts);
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, flatShading: true, ...opts }));
-  return matCache.get(key);
-}
-function box(g, w, h, d, color, x = 0, y = 0, z = 0, opts) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, opts));
-  m.position.set(x, y + h / 2, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
-}
-function cyl(g, r, h, color, x = 0, y = 0, z = 0, seg = 10, rTop = r) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, r, h, seg), mat(color));
-  m.position.set(x, y + h / 2, z); m.castShadow = true; g.add(m); return m;
-}
-function ball(g, r, color, x = 0, y = 0, z = 0, opts) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat(color, opts));
-  m.position.set(x, y, z); m.castShadow = true; g.add(m); return m;
-}
-function legs(g, w, d, h, color, inset = 0.08, t = 0.08) {
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, t, h, t, color, sx * (w / 2 - inset), 0, sz * (d / 2 - inset));
-}
-function board(g, w, h, frame, face, y = 0.9) {
-  box(g, 0.08, y, 0.08, frame, -w / 2 + 0.1, 0, 0); box(g, 0.08, y, 0.08, frame, w / 2 - 0.1, 0, 0);
-  box(g, w, h, 0.08, frame, 0, y - 0.1, 0); box(g, w - 0.14, h - 0.14, 0.1, face, 0, y - 0.03, 0.01);
-}
-const G = (fn) => (t) => { const g = new THREE.Group(); fn(g, t); return g; };
+export { mat, CLUSTERS };
 
-export const CATALOG = [
+const BASE = [
   // ---------------- Seating ----------------
   { id: 'sofa', name: 'Sofa', cat: 'Seating', size: [2, 1], wall: true, build: G((g, t) => {
     box(g, 1.9, 0.35, 0.85, t.accent, 0, 0.1); box(g, 1.9, 0.5, 0.22, t.accent, 0, 0.35, -0.32);
@@ -169,5 +145,7 @@ export const CATALOG = [
   { id: 'tree', name: 'Indoor tree', cat: 'Home', size: [1, 1], build: G((g, t) => { cyl(g, 0.25, 0.3, '#8d6e63'); cyl(g, 0.08, 1.0, '#6d4c41', 0, 0.3); ball(g, 0.5, '#3a7d44', 0, 1.6); ball(g, 0.35, '#4caf50', 0.25, 1.9, 0.1); }) },
 ];
 
+// every item = its model + cluster / description / style from catalogInfo.js
+export const CATALOG = [...BASE, ...MORE].map((c) => ({ ...c, cluster: INFO[c.id]?.[0] || 'decor', desc: INFO[c.id]?.[1] || '', style: INFO[c.id]?.[2] || [] }));
 export const CATALOG_BY_ID = Object.fromEntries(CATALOG.map((c) => [c.id, c]));
 export const CATEGORIES = [...new Set(CATALOG.map((c) => c.cat))];
