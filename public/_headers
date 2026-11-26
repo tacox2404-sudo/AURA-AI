@@ -1,0 +1,4 @@
+# Netlify reads this file (GitHub Pages ignores it). The web app manifest needs its proper type.
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=3600
